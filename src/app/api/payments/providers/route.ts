@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getPaymentSettings } from '@/lib/payments'
+import { getPaymentSettings, getAvailableProviders } from '@/lib/payments'
 
 export async function GET() {
   const settings = await getPaymentSettings()
+  const available = await getAvailableProviders()
   const providers = []
 
-  if (settings.stripe.enabled && process.env.STRIPE_SECRET_KEY) {
+  if (available.includes('stripe')) {
     providers.push({
       id: 'stripe',
       name: 'Credit Card (Stripe)',
@@ -14,7 +15,7 @@ export async function GET() {
       publishableKey: settings.stripe.publishableKey
     })
   }
-  if (settings.paypal.enabled && process.env.PAYPAL_CLIENT_ID) {
+  if (available.includes('paypal')) {
     providers.push({
       id: 'paypal',
       name: 'PayPal',
@@ -23,7 +24,7 @@ export async function GET() {
       clientId: settings.paypal.clientId
     })
   }
-  // Always provide COD as fallback for demo
+  // Always provide COD as fallback
   providers.push({
     id: 'cod',
     name: 'Cash on Delivery',

@@ -1,6 +1,7 @@
 // Quick script to update admin & customer passwords using the correct hash
-import { PrismaClient } from '@prisma/client'
-import { scryptSync, randomBytes } from 'crypto'
+// Compatible with both Node.js and Bun (CommonJS)
+const { PrismaClient } = require('@prisma/client')
+const { scryptSync, randomBytes } = require('crypto')
 
 const db = new PrismaClient()
 

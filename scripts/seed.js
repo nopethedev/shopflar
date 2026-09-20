@@ -1,6 +1,7 @@
 // Seed script — generates demo products, categories, admin user, settings
-import { PrismaClient } from '@prisma/client'
-import { scryptSync, randomBytes } from 'crypto'
+// Compatible with both Node.js and Bun (CommonJS)
+const { PrismaClient } = require('@prisma/client')
+const { scryptSync, randomBytes } = require('crypto')
 
 const db = new PrismaClient()
 

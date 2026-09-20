@@ -77,6 +77,24 @@ export function formatPrice(amount, currency = 'USD', symbol = '$') {
   return `${symbol}${n.toFixed(2)}`
 }
 
+export async function getAppUrl() {
+  // Read from DB (so admin panel can change it) — fall back to env, then to request origin
+  const dbUrl = await getStoreSettingValue('NEXT_PUBLIC_APP_URL') || await getStoreSettingValue('APP_URL')
+  if (dbUrl) return dbUrl.replace(/\/$/, '')
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '')
+  return 'http://localhost:3000'
+}
+
+async function getStoreSettingValue(key) {
+  try {
+    const row = await db.storeSetting.findUnique({ where: { key } })
+    return row?.value || ''
+  } catch {
+    return ''
+  }
+}
+
 export function slugify(s) {
   return String(s || '')
     .toLowerCase()

@@ -2,6 +2,17 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 
+export async function GET() {
+  try {
+    await requireAdmin()
+    const rows = await db.storeSetting.findMany()
+    const settings = Object.fromEntries(rows.map(r => [r.key, r.value]))
+    return NextResponse.json({ settings })
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 400 })
+  }
+}
+
 export async function PATCH(req) {
   try {
     await requireAdmin()

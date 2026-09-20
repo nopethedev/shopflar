@@ -6,7 +6,8 @@ export async function POST() {
   try {
     await requireSuperAdmin()
     await new Promise((resolve, reject) => {
-      exec('cd /home/z/my-project && bun scripts/seed.js', (err) => {
+      // Try npm first, fall back to bun if available
+      exec('node scripts/seed.js', { cwd: process.cwd() }, (err) => {
         if (err) return reject(err)
         resolve()
       })

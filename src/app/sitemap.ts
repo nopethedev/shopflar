@@ -1,9 +1,10 @@
 import { db } from '@/lib/db'
+import { getAppUrl } from '@/lib/settings'
 
 export const dynamic = 'force-dynamic'
 
 export default async function sitemap() {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://shopflar.example.com'
+  const baseUrl = await getAppUrl()
 
   const [products, categories] = await Promise.all([
     db.product.findMany({ where: { status: 'PUBLISHED' }, select: { slug: true, updatedAt: true } }),

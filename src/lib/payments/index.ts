@@ -1,6 +1,10 @@
 // Payment provider abstraction layer
 // Supports Stripe and PayPal via pluggable interface.
 // Server-side verification only — never trust payment status from frontend.
+//
+// Credentials can be configured from the admin panel (stored in DB) OR
+// via environment variables (DB takes precedence — useful for switching
+// between sandbox and live without redeploying).
 
 import { db } from '../db'
 
@@ -9,6 +13,46 @@ export class PaymentError extends Error {
     super(message)
     this.code = code
   }
+}
+
+// ============ Credential store (DB-first, env fallback) ============
+let credCache = { ts: 0, data: new Map() }
+const CRED_TTL = 1000 * 30 // 30 seconds
+
+async function getCredential(key) {
+  const now = Date.now()
+  if (now - credCache.ts > CRED_TTL) {
+    try {
+      const rows = await db.storeSetting.findMany({
+        where: { key: { startsWith: 'cred_' } }
+      })
+      credCache = { ts: now, data: new Map(rows.map(r => [r.key, r.value])) }
+    } catch {
+      // ignore db errors — fall back to env
+    }
+  }
+  // DB value takes precedence over env
+  const dbVal = credCache.data.get(`cred_${key}`)
+  if (dbVal && dbVal.length > 0) return dbVal
+  return process.env[key] || ''
+}
+
+export async function setCredential(key, value) {
+  await db.storeSetting.upsert({
+    where: { key: `cred_${key}` },
+    update: { value: String(value || '') },
+    create: { key: `cred_${key}`, value: String(value || '') }
+  })
+  // Invalidate cache
+  credCache = { ts: 0, data: new Map() }
+}
+
+export async function listCredentials() {
+  const rows = await db.storeSetting.findMany({
+    where: { key: { startsWith: 'cred_' } }
+  })
+  const map = new Map(rows.map(r => [r.key.replace('cred_', ''), r.value]))
+  return map
 }
 
 // ============ Interface ============
@@ -27,13 +71,18 @@ export class PaymentProvider {
 // ============ Stripe ============
 export class StripeProvider extends PaymentProvider {
   get name() { return 'stripe' }
-  get isConfigured() {
-    return !!process.env.STRIPE_SECRET_KEY
+  async getSecretKey() {
+    return await getCredential('STRIPE_SECRET_KEY')
+  }
+  async isConfigured() {
+    const key = await this.getSecretKey()
+    return !!key
   }
   async getClient() {
-    if (!this.isConfigured) throw new PaymentError('Stripe is not configured', 'STRIPE_NOT_CONFIGURED')
+    const secretKey = await this.getSecretKey()
+    if (!secretKey) throw new PaymentError('Stripe is not configured. Add your API key in Admin → Payments.', 'STRIPE_NOT_CONFIGURED')
     const Stripe = (await import('stripe')).default
-    return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' })
+    return new Stripe(secretKey, { apiVersion: '2024-06-20' })
   }
   async createPaymentIntent({ amount, currency, metadata = {}, orderId }) {
     const stripe = await this.getClient()
@@ -67,30 +116,59 @@ export class StripeProvider extends PaymentProvider {
   async handleWebhook(req) {
     const stripe = await this.getClient()
     const sig = req.headers.get('stripe-signature')
-    if (!sig || !process.env.STRIPE_WEBHOOK_SECRET) {
-      throw new PaymentError('Missing Stripe signature', 'WEBHOOK_SIGNATURE_MISSING')
+    const webhookSecret = await getCredential('STRIPE_WEBHOOK_SECRET')
+    if (!sig || !webhookSecret) {
+      throw new PaymentError('Missing Stripe signature or webhook secret', 'WEBHOOK_SIGNATURE_MISSING')
     }
     const body = await req.text()
-    const event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET)
+    const event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
     return event
   }
 }
 
-// ============ PayPal ============
+// ============ PayPal (REST API + IPN support) ============
 export class PayPalProvider extends PaymentProvider {
   get name() { return 'paypal' }
-  get isConfigured() {
-    return !!process.env.PAYPAL_CLIENT_ID && !!process.env.PAYPAL_CLIENT_SECRET
+  async getClientId() {
+    return await getCredential('PAYPAL_CLIENT_ID')
+  }
+  async getClientSecret() {
+    return await getCredential('PAYPAL_CLIENT_SECRET')
+  }
+  async getMode() {
+    // 'live' or 'sandbox'
+    const mode = await getCredential('PAYPAL_MODE')
+    return mode || process.env.PAYPAL_MODE || 'sandbox'
+  }
+  async isConfigured() {
+    const [id, secret] = await Promise.all([this.getClientId(), this.getClientSecret()])
+    return !!id && !!secret
+  }
+  async isIpnConfigured() {
+    const url = await getCredential('PAYPAL_IPN_URL')
+    return !!url
   }
   get baseUrl() {
+    // Synchronous accessor — uses env (or 'sandbox' default). For DB-backed mode,
+    // callers should use getBaseUrl() instead.
     return process.env.PAYPAL_MODE === 'live'
       ? 'https://api-m.paypal.com'
       : 'https://api-m.sandbox.paypal.com'
   }
+  async getBaseUrl() {
+    const mode = await this.getMode()
+    return mode === 'live'
+      ? 'https://api-m.paypal.com'
+      : 'https://api-m.sandbox.paypal.com'
+  }
   async getAccessToken() {
-    if (!this.isConfigured) throw new PaymentError('PayPal is not configured', 'PAYPAL_NOT_CONFIGURED')
-    const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`).toString('base64')
-    const res = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
+    const [clientId, clientSecret] = await Promise.all([this.getClientId(), this.getClientSecret()])
+    if (!clientId || !clientSecret) {
+      throw new PaymentError('PayPal is not configured. Add your API credentials in Admin → Payments.', 'PAYPAL_NOT_CONFIGURED')
+    }
+    const baseUrl = await this.getBaseUrl()
+    const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+    const res = await fetch(`${baseUrl}/v1/oauth2/token`, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${auth}`,
@@ -104,7 +182,8 @@ export class PayPalProvider extends PaymentProvider {
   }
   async createPaymentIntent({ amount, currency, description, orderId }) {
     const token = await this.getAccessToken()
-    const res = await fetch(`${this.baseUrl}/v2/checkout/orders`, {
+    const baseUrl = await this.getBaseUrl()
+    const res = await fetch(`${baseUrl}/v2/checkout/orders`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -125,13 +204,14 @@ export class PayPalProvider extends PaymentProvider {
   }
   async verifyPayment(reference) {
     const token = await this.getAccessToken()
-    const res = await fetch(`${this.baseUrl}/v2/checkout/orders/${reference}`, {
+    const baseUrl = await this.getBaseUrl()
+    const res = await fetch(`${baseUrl}/v2/checkout/orders/${reference}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
     const data = await res.json()
     if (!res.ok) throw new PaymentError(data.message || 'PayPal verification failed', 'PAYPAL_VERIFY_FAILED')
     if (data.status === 'APPROVED') {
-      const captureRes = await fetch(`${this.baseUrl}/v2/checkout/orders/${reference}/capture`, {
+      const captureRes = await fetch(`${baseUrl}/v2/checkout/orders/${reference}/capture`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       })
@@ -156,7 +236,8 @@ export class PayPalProvider extends PaymentProvider {
   }
   async refundPayment(reference, amount) {
     const token = await this.getAccessToken()
-    const res = await fetch(`${this.baseUrl}/v2/payments/captures/${reference}/refund`, {
+    const baseUrl = await this.getBaseUrl()
+    const res = await fetch(`${baseUrl}/v2/payments/captures/${reference}/refund`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(amount ? { amount: { value: amount.toFixed(2), currency_code: 'USD' } } : {})
@@ -164,6 +245,27 @@ export class PayPalProvider extends PaymentProvider {
     const data = await res.json()
     if (!res.ok) throw new PaymentError(data.message || 'PayPal refund failed', 'PAYPAL_REFUND_FAILED')
     return { id: data.id, status: data.status, amount: parseFloat(data.amount?.value || '0') }
+  }
+
+  // ============ PayPal IPN (Instant Payment Notification) ============
+  // Used for personal/business accounts that rely on IPN instead of webhooks.
+  // PayPal sends a POST to your /api/payments/webhook/paypal/ipn endpoint,
+  // we then POST it back to PayPal for verification.
+  async verifyIpn(body) {
+    // PayPal verification: send back the exact same body with cmd=_notify-validate prepended
+    const params = new URLSearchParams(body)
+    params.append('cmd', '_notify-validate')
+
+    const baseUrl = await this.getBaseUrl()
+    const verifyUrl = `${baseUrl}/cgi-bin/webscr`
+
+    const res = await fetch(verifyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    })
+    const text = await res.text()
+    return text.trim() === 'VERIFIED'
   }
 }
 
@@ -195,16 +297,31 @@ export async function getPaymentSettings() {
     where: { key: { startsWith: 'payment_' } }
   })
   const map = new Map(rows.map(r => [r.key, r.value]))
+
+  const stripeSecret = await getCredential('STRIPE_SECRET_KEY')
+  const stripePub = await getCredential('STRIPE_PUBLISHABLE_KEY')
+  const stripeWebhook = await getCredential('STRIPE_WEBHOOK_SECRET')
+  const paypalId = await getCredential('PAYPAL_CLIENT_ID')
+  const paypalSecret = await getCredential('PAYPAL_CLIENT_SECRET')
+  const paypalMode = await getCredential('PAYPAL_MODE')
+  const paypalIpnUrl = await getCredential('PAYPAL_IPN_URL')
+
   return {
     stripe: {
       enabled: map.get('payment_stripe_enabled') === 'true',
       testMode: map.get('payment_stripe_testmode') !== 'false',
-      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || ''
+      configured: !!(stripeSecret && stripePub),
+      hasWebhookSecret: !!stripeWebhook,
+      publishableKey: stripePub || ''  // safe to expose
     },
     paypal: {
       enabled: map.get('payment_paypal_enabled') === 'true',
-      testMode: process.env.PAYPAL_MODE !== 'live',
-      clientId: process.env.PAYPAL_CLIENT_ID || ''
+      testMode: paypalMode !== 'live',
+      mode: paypalMode || 'sandbox',
+      configured: !!(paypalId && paypalSecret),
+      clientId: paypalId || '',  // safe to expose
+      hasIpnUrl: !!paypalIpnUrl,
+      ipnUrl: paypalIpnUrl || ''
     },
     cod: {
       enabled: map.get('payment_cod_enabled') !== 'false'
@@ -223,8 +340,8 @@ export async function setPaymentSetting(key, value) {
 export async function getAvailableProviders() {
   const settings = await getPaymentSettings()
   const list = []
-  if (settings.stripe.enabled && process.env.STRIPE_SECRET_KEY) list.push('stripe')
-  if (settings.paypal.enabled && process.env.PAYPAL_CLIENT_ID) list.push('paypal')
+  if (settings.stripe.enabled && settings.stripe.configured) list.push('stripe')
+  if (settings.paypal.enabled && settings.paypal.configured) list.push('paypal')
   if (settings.cod.enabled) list.push('cod')
   return list
 }
