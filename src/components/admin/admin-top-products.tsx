@@ -1,0 +1,35 @@
+import { TrendingUp } from 'lucide-react'
+
+export function AdminTopProducts({ products }) {
+  return (
+    <div className="rounded-xl border border-border bg-background p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-semibold flex items-center gap-2">
+          <TrendingUp className="h-4 w-4" />
+          Top Products
+        </h2>
+      </div>
+      {products.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">No sales data yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {products.map((p, i) => (
+            <div key={p.name} className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-muted-foreground w-5">#{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{p.name}</p>
+                <p className="text-xs text-muted-foreground">{p._sum.quantity} sold</p>
+              </div>
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden w-24">
+                <div
+                  className="h-full bg-foreground"
+                  style={{ width: `${Math.min(100, (p._sum.quantity / products[0]._sum.quantity) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
