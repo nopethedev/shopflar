@@ -21,7 +21,8 @@ export function AdminPaymentsManager({ settings: initialSettings }) {
     PAYPAL_CLIENT_ID: '',
     PAYPAL_CLIENT_SECRET: '',
     PAYPAL_MODE: 'sandbox',
-    PAYPAL_IPN_URL: ''
+    PAYPAL_IPN_URL: '',
+    PAYPAL_EMAIL: ''
   })
   const [showSecrets, setShowSecrets] = useState({
     STRIPE_SECRET_KEY: false,
@@ -296,6 +297,86 @@ export function AdminPaymentsManager({ settings: initialSettings }) {
             <li><strong>IPN</strong>: used for personal/premier accounts that rely on PayPal Standard buttons. Enable in your PayPal profile and paste the URL above.</li>
             <li>Server-side verification is always performed — PayPal status is never trusted from the browser.</li>
           </ul>
+        </div>
+      </Card>
+
+      {/* PayPal Standard (personal account) */}
+      <Card className="p-5">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-[#0070ba] flex items-center justify-center text-white font-bold text-xs">
+              PPS
+            </div>
+            <div>
+              <h3 className="font-semibold flex items-center gap-2">
+                PayPal Standard
+                <Badge variant="outline">Personal account</Badge>
+              </h3>
+              <p className="text-xs text-muted-foreground">Just need your PayPal email — no API credentials</p>
+            </div>
+          </div>
+          <Switch
+            checked={settings.paypalStandard?.enabled || false}
+            onCheckedChange={(v) => {
+              setSettings({ ...settings, paypalStandard: { ...settings.paypalStandard, enabled: v } })
+              saveToggle('paypal_standard_enabled', v)
+            }}
+          />
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <Label className="text-xs">Status</Label>
+            <div className="mt-1">
+              {settings.paypalStandard?.configured ? (
+                <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100"><CheckCircle2 className="h-3 w-3 mr-1" /> Configured</Badge>
+              ) : (
+                <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100"><AlertTriangle className="h-3 w-3 mr-1" /> PayPal email required</Badge>
+              )}
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Mode</Label>
+            <p className="mt-1.5">{settings.paypalStandard?.testMode ? <Badge variant="outline">Sandbox</Badge> : <Badge>Live</Badge>}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <div>
+            <Label className="text-xs">PayPal Email <span className="text-muted-foreground">(where customers send payment)</span></Label>
+            <Input
+              type="email"
+              value={creds.PAYPAL_EMAIL}
+              onChange={(e) => setCred('PAYPAL_EMAIL', e.target.value)}
+              placeholder="you@example.com"
+              className="text-sm"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Your personal PayPal email. No API credentials needed.
+            </p>
+          </div>
+          <div>
+            <Label className="text-xs">IPN Notification URL</Label>
+            <Input
+              type="text"
+              value={creds.PAYPAL_IPN_URL}
+              onChange={(e) => setCred('PAYPAL_IPN_URL', e.target.value)}
+              placeholder={`${typeof window !== 'undefined' ? window.location.origin : 'https://yourdomain.com'}/api/payments/webhook/paypal/ipn`}
+              className="text-xs"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Set this URL in your PayPal account: Profile → My Selling Tools → Instant Payment Notifications → Update → Enable
+            </p>
+          </div>
+          <Button size="sm" onClick={() => saveCreds(['PAYPAL_EMAIL', 'PAYPAL_IPN_URL', 'PAYPAL_MODE'])} disabled={saving}>
+            <Save className="h-3.5 w-3.5 mr-1" /> Save PayPal Standard
+          </Button>
+        </div>
+
+        <div className="mt-4 p-3 rounded-md bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 space-y-1">
+          <p className="font-semibold">✓ Simplest PayPal setup</p>
+          <p>Just enter your PayPal email above and enable. No REST API app, no client ID, no secret.</p>
+          <p>Payments are verified via PayPal IPN (server-side). Mode is shared with the REST API card above.</p>
         </div>
       </Card>
 

@@ -2,70 +2,68 @@
 
 The fastest way to get Shopflar running locally:
 
-## Option A: Use the start script
+## Option A: Use the start script (recommended)
 
 **Mac/Linux:**
 ```bash
 ./start.sh
-npm run dev    # or: bun run dev
 ```
 
 **Windows:**
 ```bat
 start.bat
-npm run dev
 ```
 
-The script automatically installs dependencies, creates the database, and seeds demo data.
+The script:
+1. Installs dependencies (uses `npm` or `bun` if available)
+2. Generates a `NEXTAUTH_SECRET` and saves it to `.env` if missing
+3. Creates the SQLite database and tables
+4. Starts the dev server on port 3000
+
+When the server starts, open **http://localhost:3000** — you'll be redirected to `/install` automatically on first run.
 
 ## Option B: Manual setup
 
 ```bash
-# 1. Install dependencies (Bun recommended, npm works too)
-npm install          # or: bun install
+# 1. Install dependencies (Bun or npm both work)
+npm install
 
-# 2. Generate Prisma client + create SQLite database
-npm run db:generate
-npm run db:push
+# 2. One-time setup (creates DB, generates Prisma client)
+npm run setup
 
-# 3. Seed demo data (creates products, categories, admin user, etc.)
-npm run db:seed
-
-# 4. Start the dev server
-npm run dev          # or: bun run dev
+# 3. Start the dev server
+npm run dev
 ```
 
-## Open the app
+## First-run install wizard
 
-- **Storefront**: http://localhost:3000
-- **Admin panel**: http://localhost:3000/admin
+On first visit, you'll be sent to **/install** — a 3-step wizard:
+1. **Store info** — name, contact email, currency
+2. **Admin account** — your admin email and password (Super Admin role)
+3. **Demo data** — opt in to load sample products, categories, discounts, shipping, tax, and orders
 
-## Demo accounts
+The wizard:
+- Creates your admin user (Super Admin role)
+- Saves your store settings
+- Optionally loads demo products, categories, discounts, etc.
+- Logs you in automatically
+- Redirects you to `/admin`
 
-| Role | Email | Password |
-|------|-------|----------|
-| Super Admin | `admin@shopflar.dev` | `admin12345` |
-| Customer | `customer@example.com` | `customer123` |
+You only see the wizard once. If you ever want to reset, delete `db/custom.db` and restart.
 
-## Try the discount codes
+## Custom port
 
-- `WELCOME10` — 10% off, no minimum
-- `SAVE25` — 25% off, $150 min (capped at $75)
-- `FREESHIP` — Free shipping
-
-## Changing the port
-
-The dev server runs on port 3000 by default. To use a different port:
+Set `PORT` before running:
 
 **Mac/Linux:**
 ```bash
-PORT=8080 npm run dev
+PORT=8080 ./start.sh           # or: PORT=8080 npm run dev
 ```
 
 **Windows (cmd):**
 ```bat
 set PORT=8080
-npm run dev
+start.bat
 ```
 
 **Windows (PowerShell):**
@@ -73,55 +71,114 @@ npm run dev
 $env:PORT=8080; npm run dev
 ```
 
-For production:
+## Production (no manual build needed)
+
 ```bash
-PORT=8080 npm run start
+./scripts/start-prod.sh           # Mac/Linux — auto-builds if .next is missing
+# Or:
+npm run build && npm run start
 ```
 
-## Configuring payment providers (Stripe, PayPal)
+The `start-prod.sh` script checks if `.next` exists; if not, it runs `npm run build` automatically, then starts the production server.
 
-You have **two ways** to configure payment credentials:
+## Switching databases (SQLite → MySQL/MariaDB → PostgreSQL)
 
-### 1. From the admin panel (recommended)
+Shopflar ships with SQLite for zero-config local dev. To switch to MySQL/MariaDB or PostgreSQL:
 
-1. Log in to `/admin` (admin@shopflar.dev / admin12345)
+```bash
+npm run switch-db mysql          # for MySQL or MariaDB
+npm run switch-db postgres      # for PostgreSQL or Supabase
+npm run switch-db sqlite        # back to default
+```
+
+The script will:
+1. Ask for your connection string (or read from `DATABASE_URL` env var)
+2. Update `prisma/schema.prisma` (changes the `provider`)
+3. Update `.env` (the `DATABASE_URL`)
+4. Optionally run `prisma generate` and `prisma db push` immediately
+
+Example for MariaDB:
+```bash
+DATABASE_URL="mysql://root:password@localhost:3306/shopflar" npm run switch-db mysql
+```
+
+**MariaDB setup:**
+```bash
+# Install MariaDB if needed, then create the database:
+mysql -u root -p -e "CREATE DATABASE shopflar CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root -p -e "CREATE USER 'shopflar'@'localhost' IDENTIFIED BY 'yourpassword';"
+mysql -u root -p -e "GRANT ALL ON shopflar.* TO 'shopflar'@'localhost';"
+
+# Switch and push schema:
+DATABASE_URL="mysql://shopflar:yourpassword@localhost:3306/shopflar" npm run switch-db mysql
+```
+
+## Demo accounts (only created by install wizard or seed script)
+
+If you skipped the wizard and ran `npm run db:seed` instead:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Super Admin | `admin@shopflar.dev` | `admin12345` |
+| Customer | `customer@example.com` | `customer123` |
+
+If you used the install wizard, use whatever email/password you set up.
+
+## Try the discount codes (if demo data loaded)
+
+- `WELCOME10` — 10% off, no minimum
+- `FREESHIP` — Free shipping
+
+## Configuring payment providers
+
+### From the admin panel (recommended)
+
+1. Log in to `/admin`
 2. Navigate to **Payments** in the sidebar
-3. Enter your API keys in the form fields
+3. Choose your provider:
+   - **Stripe** — enter Secret Key + Publishable Key (REST API)
+   - **PayPal** — enter Client ID + Secret (REST API, for business accounts)
+   - **PayPal Standard** — enter just your **PayPal email** (for personal accounts, uses IPN)
+   - **Cash on Delivery** — toggle on, no configuration needed
 4. Toggle the provider on
 5. Click **Save Credentials**
 
-The credentials are stored in the database (server-side only). Secret keys are never exposed to the browser.
+### PayPal Standard (personal account — simplest)
 
-### 2. From `.env` file
+Just enter your PayPal email in **Admin → Payments → PayPal Standard**. That's it. No API credentials, no REST app, no client ID/secret.
 
-Edit `.env` and add your credentials:
+How it works:
+1. Customer chooses PayPal at checkout
+2. They're redirected to PayPal's hosted payment page (paypal.com)
+3. They pay with their PayPal account or card
+4. PayPal sends an IPN to `/api/payments/webhook/paypal/ipn`
+5. The server verifies the IPN by sending it back to PayPal
+6. If PayPal says "VERIFIED", the order is marked as paid (server-side)
+
+**To enable IPN:**
+- In your PayPal account: Profile → My Selling Tools → Instant Payment Notifications → Update → Enable
+- Set the URL to: `https://yourdomain.com/api/payments/webhook/paypal/ipn`
+- The admin panel will show you the exact URL to paste
+
+### From `.env` file (alternative)
+
+You can also set credentials in `.env`. DB credentials take precedence over env vars.
+
 ```bash
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_PUBLISHABLE_KEY=pk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
 
 PAYPAL_CLIENT_ID=...
 PAYPAL_CLIENT_SECRET=...
+
+# Or for PayPal Standard (personal):
+PAYPAL_EMAIL=you@example.com
 PAYPAL_MODE=sandbox  # or 'live'
 ```
 
-DB credentials take precedence over env vars — you can use either or both.
-
-## PayPal personal account support (IPN)
-
-If you're using a PayPal personal/premier account (not a business account with REST API access), use PayPal IPN:
-
-1. Log in to your PayPal account
-2. Go to **Profile → My Selling Tools → Instant Payment Notifications**
-3. Set the notification URL to: `https://yourdomain.com/api/payments/webhook/paypal/ipn`
-4. Enable IPN
-5. In the admin panel → Payments → PayPal, paste the same URL in the "IPN Notification URL" field
-
-The IPN listener verifies each notification with PayPal before marking orders as paid — server-side, never trusting the browser.
-
 ## Setting the public App URL
 
-The App URL is used for sitemap.xml, robots.txt, and absolute links in emails.
+The App URL is used for sitemap.xml, robots.txt, and absolute links.
 
 **From the admin panel:**
 1. Go to **Admin → Payments → Application URL**
@@ -136,31 +193,12 @@ APP_URL=https://myshop.com
 NEXT_PUBLIC_APP_URL=https://myshop.com
 ```
 
-## What's already working
-
-- Browse the storefront, add products to cart, checkout with Cash on Delivery
-- Admin dashboard with revenue chart, recent orders, low-stock alerts
-- Full product editor with 8 tabs (general, images, pricing, inventory, variants, categories, SEO, shipping)
-- Appearance editor — change colors, hero image, fonts, social links live
-- Newsletter, shipping, tax, discount management
-- Customer accounts with order history & saved addresses
-- PayPal IPN listener (for personal account support)
-
-## What's optional (needs API keys)
-
-- **Stripe** — add credentials via Admin → Payments (or `.env`)
-- **PayPal REST API** — add credentials via Admin → Payments (or `.env`)
-- **PayPal IPN** — for personal accounts; configure URL in PayPal profile + admin panel
-- **Printify** — add `PRINTIFY_API_KEY` to `.env` (DB-backed coming soon)
-- **Supabase** — for production; switch Prisma provider to `postgresql` and set `DATABASE_URL`
-
-See `README.md` for full documentation on each integration.
-
 ## Requirements
 
 - Node.js 18+ (or Bun — recommended, faster)
 - That's it. SQLite is bundled, no external database needed for local dev.
+- For production: MySQL/MariaDB, PostgreSQL, or Supabase (use `npm run switch-db`)
 
-## Production deployment
+## Need help?
 
-See `README.md` → "Production Deployment" section for Vercel/Docker/self-hosted instructions.
+See `README.md` for full documentation on each integration.

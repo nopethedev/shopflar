@@ -20,7 +20,8 @@ const PUBLIC_KEYS = new Set([
   'STRIPE_PUBLISHABLE_KEY',
   'PAYPAL_CLIENT_ID',
   'PAYPAL_MODE',
-  'PAYPAL_IPN_URL'
+  'PAYPAL_IPN_URL',
+  'PAYPAL_EMAIL'
 ])
 
 export async function GET() {

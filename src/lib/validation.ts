@@ -12,7 +12,7 @@ export const checkoutSchema = z.object({
   country: z.string().min(1, 'Country is required'),
   phone: z.string().optional(),
   shippingMethodId: z.string().min(1, 'Shipping method is required'),
-  paymentProvider: z.enum(['stripe', 'paypal', 'cod']).optional(),
+  paymentProvider: z.enum(['stripe', 'paypal', 'paypal_standard', 'cod']).optional(),
   discountCode: z.string().optional(),
   notes: z.string().optional(),
   createAccount: z.boolean().optional(),

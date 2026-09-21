@@ -8,11 +8,14 @@
 //
 // Configure IPN URL in your PayPal account:
 //   https://www.paypal.com/cgi-bin/customerprofileweb?cmd=_profile-ipn-notify
-// Or set it per-button in your PayPal button HTML.
+// Or pass it via the notify_url field when creating the payment (handled automatically).
+//
+// For personal accounts: just enter your PayPal email in Admin → Payments →
+// PayPal Standard. No API credentials needed.
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getProvider } from '@/lib/payments'
+import { getProvider, getCredential } from '@/lib/payments'
 import { markOrderPaid } from '@/lib/services/orders'
 
 export async function POST(req) {
@@ -35,28 +38,33 @@ export async function POST(req) {
     const txnType = ipnData.txn_type
     const paymentStatus = ipnData.payment_status
     const txnId = ipnData.txn_id
-    const receiverEmail = ipnData.receiver_email
+    const receiverEmail = (ipnData.receiver_email || '').toLowerCase()
     const payerEmail = ipnData.payer_email
     const customField = ipnData.custom  // we put orderId here
     const invoice = ipnData.invoice      // alternative: orderId in invoice
     const mcGross = parseFloat(ipnData.mc_gross || '0')
     const mcCurrency = ipnData.mc_currency || 'USD'
 
-    // Look up our internal order ID
-    // We pass it via the `custom` field when creating the PayPal payment
-    let orderId = customField
-    if (!orderId && invoice) {
-      // Try to find by invoice number (which we set to orderNumber)
-      const order = await db.order.findUnique({ where: { orderNumber: invoice } })
-      if (order) orderId = order.id
+    // Optional security: verify receiver email matches the configured PayPal email
+    const expectedEmail = (await getCredential('PAYPAL_EMAIL') || '').toLowerCase()
+    if (expectedEmail && receiverEmail && receiverEmail !== expectedEmail) {
+      console.warn(`[PayPal IPN] Receiver email mismatch: expected=${expectedEmail} got=${receiverEmail}`)
+      return NextResponse.json({ status: 'RECEIVER_MISMATCH' }, { status: 400 })
     }
+
+    // Look up our internal order ID — check custom, invoice, and finally txn_id reference
+    let orderId = customField || invoice
     if (!orderId) {
-      // Fallback: try to find by paymentRef
       const order = await db.order.findFirst({ where: { paymentRef: txnId } })
       if (order) orderId = order.id
     }
+    // If we still don't have it but we have invoice that looks like our orderNumber
+    if (!orderId && invoice) {
+      const order = await db.order.findUnique({ where: { orderNumber: invoice } })
+      if (order) orderId = order.id
+    }
 
-    console.log(`[PayPal IPN] txn=${txnType} status=${paymentStatus} txnId=${txnId} orderId=${orderId} amount=${mcGross} ${mcCurrency}`)
+    console.log(`[PayPal IPN] txn=${txnType} status=${paymentStatus} txnId=${txnId} orderId=${orderId} amount=${mcGross} ${mcCurrency} receiver=${receiverEmail}`)
 
     if (!orderId) {
       console.warn(`[PayPal IPN] Could not resolve order for txn_id=${txnId}`)
@@ -66,14 +74,11 @@ export async function POST(req) {
     if (paymentStatus === 'Completed') {
       // Mark the order as paid (server-side verified)
       await markOrderPaid(orderId, 'paypal', txnId)
-
-      // Optional: send order to Printify for fulfillment
-      // (handled automatically by order status change hooks if Printify is configured)
     } else if (paymentStatus === 'Refunded' || paymentStatus === 'Reversed') {
       await db.order.update({
         where: { id: orderId },
         data: { status: 'REFUNDED', paymentStatus: 'REFUNDED' }
-      })
+      }).catch(() => {})
       await db.payment.create({
         data: {
           orderId,
@@ -95,7 +100,6 @@ export async function POST(req) {
       }).catch(() => {})
     }
 
-    // Log the IPN for debugging/audit
     console.log(`[PayPal IPN] Processed: order=${orderId} status=${paymentStatus}`)
 
     return NextResponse.json({ status: 'OK' })

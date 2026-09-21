@@ -281,11 +281,79 @@ export class CODProvider extends PaymentProvider {
   }
 }
 
+// ============ PayPal Standard (IPN-only, personal account) ============
+// Works with just a PayPal email — no REST API credentials needed.
+// Used for personal/premier/business accounts that want PayPal Standard
+// buttons + IPN notifications.
+export class PayPalStandardProvider extends PaymentProvider {
+  get name() { return 'paypal_standard' }
+  async getPaypalEmail() {
+    return await getCredential('PAYPAL_EMAIL')
+  }
+  async isConfigured() {
+    const email = await this.getPaypalEmail()
+    return !!email
+  }
+  async createPaymentIntent({ amount, currency, description, orderId, appName }) {
+    const email = await this.getPaypalEmail()
+    if (!email) {
+      throw new PaymentError('PayPal email not configured. Add your PayPal email in Admin → Payments.', 'PAYPAL_NOT_CONFIGURED')
+    }
+    const mode = await getCredential('PAYPAL_MODE') || 'sandbox'
+    const baseUrl = mode === 'live'
+      ? 'https://www.paypal.com/cgi-bin/webscr'
+      : 'https://www.sandbox.paypal.com/cgi-bin/webscr'
+
+    // Build PayPal Standard button URL with order parameters
+    const params = new URLSearchParams({
+      cmd: '_xclick',
+      business: email,
+      item_name: description || `Order ${orderId}`,
+      item_number: orderId,
+      amount: amount.toFixed(2),
+      currency_code: currency,
+      custom: orderId,
+      invoice: orderId,
+      no_shipping: 0,
+      no_note: 1,
+      rm: 2,  // Return method = POST (so we get all the IPN data back on return)
+      // notify_url is set in PayPal profile or passed here:
+      notify_url: await getCredential('PAYPAL_IPN_URL') || '',
+      return_url: `${await getAppUrl()}/checkout/success?order=${orderId}`,
+      cancel_return: `${await getAppUrl()}/checkout`,
+      bn: 'Shopflar_Cart_WPS'
+    })
+
+    return {
+      id: `paypal_standard_${orderId}`,
+      status: 'pending',
+      redirect: `${baseUrl}?${params.toString()}`,
+      method: 'redirect'
+    }
+  }
+  async verifyPayment(reference) {
+    // Standard payments are verified via IPN, not REST API
+    // When the user returns from PayPal, we check if the IPN has already marked the order paid
+    // The reference here is the order ID
+    return { success: false, status: 'pending_ipn', amount: 0, currency: 'USD', raw: { reference, note: 'Awaiting IPN verification' } }
+  }
+  async refundPayment(reference, amount) {
+    throw new PaymentError('PayPal Standard refunds must be done manually in your PayPal account', 'PAYPAL_STANDARD_NO_API_REFUND')
+  }
+}
+
+// Helper: import getAppUrl lazily to avoid circular dependency
+async function getAppUrl() {
+  const { getAppUrl } = await import('../settings')
+  return await getAppUrl()
+}
+
 // ============ Factory ============
 export function getProvider(name) {
   switch (name) {
     case 'stripe': return new StripeProvider({})
     case 'paypal': return new PayPalProvider({})
+    case 'paypal_standard': return new PayPalStandardProvider({})
     case 'cod': return new CODProvider({})
     default: throw new PaymentError(`Unknown provider: ${name}`, 'PROVIDER_UNKNOWN')
   }
@@ -305,6 +373,7 @@ export async function getPaymentSettings() {
   const paypalSecret = await getCredential('PAYPAL_CLIENT_SECRET')
   const paypalMode = await getCredential('PAYPAL_MODE')
   const paypalIpnUrl = await getCredential('PAYPAL_IPN_URL')
+  const paypalEmail = await getCredential('PAYPAL_EMAIL')
 
   return {
     stripe: {
@@ -312,15 +381,23 @@ export async function getPaymentSettings() {
       testMode: map.get('payment_stripe_testmode') !== 'false',
       configured: !!(stripeSecret && stripePub),
       hasWebhookSecret: !!stripeWebhook,
-      publishableKey: stripePub || ''  // safe to expose
+      publishableKey: stripePub || ''
     },
     paypal: {
       enabled: map.get('payment_paypal_enabled') === 'true',
       testMode: paypalMode !== 'live',
       mode: paypalMode || 'sandbox',
       configured: !!(paypalId && paypalSecret),
-      clientId: paypalId || '',  // safe to expose
+      clientId: paypalId || '',
       hasIpnUrl: !!paypalIpnUrl,
+      ipnUrl: paypalIpnUrl || ''
+    },
+    paypalStandard: {
+      enabled: map.get('payment_paypal_standard_enabled') === 'true',
+      testMode: paypalMode !== 'live',
+      mode: paypalMode || 'sandbox',
+      configured: !!paypalEmail,
+      email: paypalEmail || '',
       ipnUrl: paypalIpnUrl || ''
     },
     cod: {
@@ -342,6 +419,7 @@ export async function getAvailableProviders() {
   const list = []
   if (settings.stripe.enabled && settings.stripe.configured) list.push('stripe')
   if (settings.paypal.enabled && settings.paypal.configured) list.push('paypal')
+  if (settings.paypalStandard.enabled && settings.paypalStandard.configured) list.push('paypal_standard')
   if (settings.cod.enabled) list.push('cod')
   return list
 }

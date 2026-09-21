@@ -19,9 +19,17 @@ export async function GET() {
     providers.push({
       id: 'paypal',
       name: 'PayPal',
-      description: 'Pay with your PayPal account',
+      description: 'Pay with your PayPal account (REST API)',
       testMode: settings.paypal.testMode,
       clientId: settings.paypal.clientId
+    })
+  }
+  if (available.includes('paypal_standard')) {
+    providers.push({
+      id: 'paypal_standard',
+      name: 'PayPal',
+      description: 'Pay with PayPal — personal account',
+      testMode: settings.paypalStandard.testMode
     })
   }
   // Always provide COD as fallback

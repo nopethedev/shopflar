@@ -7,6 +7,15 @@ import { AdminHeader } from '@/components/admin/admin-header'
 export const dynamic = 'force-dynamic'
 
 export default async function AdminLayout({ children }) {
+  // Check if any admin user exists. If not, redirect to /install
+  const adminCount = await db.user.count({
+    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } }
+  }).catch(() => 0)
+
+  if (adminCount === 0) {
+    redirect('/install')
+  }
+
   const user = await getSessionUser()
   if (!user) redirect('/login?next=/admin')
   if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') redirect('/')

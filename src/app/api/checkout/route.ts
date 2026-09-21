@@ -24,7 +24,7 @@ const checkoutSchema = z.object({
   country: z.string().min(1),
   phone: z.string().optional(),
   shippingMethodId: z.string().min(1),
-  paymentProvider: z.enum(['stripe', 'paypal', 'cod']).optional(),
+  paymentProvider: z.enum(['stripe', 'paypal', 'paypal_standard', 'cod']).optional(),
   discountCode: z.string().optional(),
   notes: z.string().optional(),
   createAccount: z.boolean().optional(),
@@ -157,6 +157,34 @@ export async function POST(req) {
           orderNumber: order.orderNumber,
           provider: 'paypal',
           redirect: url.toString()
+        })
+      } catch (e) {
+        await db.order.update({ where: { id: order.id }, data: { status: 'FAILED' } })
+        return NextResponse.json({ error: e.message || 'PayPal error' }, { status: 400 })
+      }
+    }
+
+    // For PayPal Standard (personal account, IPN-only), redirect to PayPal's
+    // hosted checkout page. The user pays on paypal.com, then PayPal sends an
+    // IPN to /api/payments/webhook/paypal/ipn which verifies the payment.
+    if (provider === 'paypal_standard') {
+      try {
+        const paypal = getProvider('paypal_standard')
+        const result = await paypal.createPaymentIntent({
+          amount: order.total,
+          currency: order.currency,
+          description: `Order ${order.orderNumber}`,
+          orderId: order.id
+        })
+        await db.order.update({
+          where: { id: order.id },
+          data: { paymentRef: result.id, paymentProvider: 'paypal_standard' }
+        })
+        return NextResponse.json({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          provider: 'paypal_standard',
+          redirect: result.redirect
         })
       } catch (e) {
         await db.order.update({ where: { id: order.id }, data: { status: 'FAILED' } })

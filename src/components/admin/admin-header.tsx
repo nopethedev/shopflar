@@ -1,8 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useState } from 'react'
-import { usePathname } from 'next/navigation'
-import { Menu, X, ExternalLink, LogOut, ChevronDown } from 'lucide-react'
+import { Menu, ExternalLink, LogOut, ChevronDown } from 'lucide-react'
 import {
   Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetClose
 } from '@/components/ui/sheet'
@@ -10,26 +9,12 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
-
-const navItems = [
-  { label: 'Dashboard', href: '/admin' },
-  { label: 'Orders', href: '/admin/orders' },
-  { label: 'Products', href: '/admin/products' },
-  { label: 'Categories', href: '/admin/categories' },
-  { label: 'Customers', href: '/admin/customers' },
-  { label: 'Discounts', href: '/admin/discounts' },
-  { label: 'Newsletter', href: '/admin/newsletter' },
-  { label: 'Shipping', href: '/admin/shipping' },
-  { label: 'Tax', href: '/admin/tax' },
-  { label: 'Payments', href: '/admin/payments' },
-  { label: 'Printify', href: '/admin/printify' },
-  { label: 'Appearance', href: '/admin/appearance' },
-  { label: 'Settings', href: '/admin/settings' },
-  { label: 'Users', href: '/admin/users' }
-]
+import { flatNav } from './admin-sidebar'
+import { cn } from '@/lib/utils'
 
 export function AdminHeader({ user, storeName }) {
   const [open, setOpen] = useState(false)
+  const pathname = usePathnameHelper()
 
   return (
     <header className="sticky top-0 z-40 h-14 border-b border-border bg-background/95 backdrop-blur">
@@ -41,21 +26,28 @@ export function AdminHeader({ user, storeName }) {
                 <Menu className="h-5 w-5" />
               </button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[280px] p-0">
+            <SheetContent side="left" className="w-[280px] p-0 overflow-y-auto">
               <SheetHeader className="px-5 py-4 border-b">
                 <SheetTitle>{storeName} Admin</SheetTitle>
               </SheetHeader>
               <nav className="p-3 space-y-0.5">
-                {navItems.map(item => (
-                  <SheetClose asChild key={item.href}>
-                    <Link
-                      href={item.href}
-                      className="flex items-center px-3 py-2 rounded-md text-sm font-medium hover:bg-muted"
-                    >
-                      {item.label}
-                    </Link>
-                  </SheetClose>
-                ))}
+                {flatNav.map(item => {
+                  const active = pathname === item.href || (item.href !== '/admin' && pathname.startsWith(item.href))
+                  return (
+                    <SheetClose asChild key={item.href}>
+                      <Link
+                        href={item.href}
+                        className={cn(
+                          'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium',
+                          active ? 'bg-foreground text-background' : 'hover:bg-muted'
+                        )}
+                      >
+                        <item.icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    </SheetClose>
+                  )
+                })}
               </nav>
             </SheetContent>
           </Sheet>
@@ -107,3 +99,7 @@ export function AdminHeader({ user, storeName }) {
     </header>
   )
 }
+
+// Local hook (avoid extra import from next/navigation just for usePathname)
+import { usePathname } from 'next/navigation'
+function usePathnameHelper() { return usePathname() }
