@@ -67,7 +67,11 @@ export async function PATCH(req, { params }) {
         ...(body.width !== undefined ? { width: body.width ? Number(body.width) : null } : {}),
         ...(body.height !== undefined ? { height: body.height ? Number(body.height) : null } : {}),
         ...(body.seoTitle !== undefined ? { seoTitle: body.seoTitle || null } : {}),
-        ...(body.seoDescription !== undefined ? { seoDescription: body.seoDescription || null } : {})
+        ...(body.seoDescription !== undefined ? { seoDescription: body.seoDescription || null } : {}),
+        ...(body.productType != null ? { productType: body.productType } : {}),
+        ...(body.downloadUrl !== undefined ? { downloadUrl: body.downloadUrl || null } : {}),
+        ...(body.downloadLimit != null ? { downloadLimit: parseInt(body.downloadLimit) || 0 } : {}),
+        ...(body.codePool !== undefined ? { codePool: body.codePool } : {})
       }
     })
 

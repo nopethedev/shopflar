@@ -283,7 +283,8 @@ export async function markOrderPaid(orderId, provider, reference) {
       paymentStatus: 'PAID',
       paymentProvider: provider,
       paymentRef: reference
-    }
+    },
+    include: { items: true }
   })
 
   await db.payment.create({
@@ -296,7 +297,110 @@ export async function markOrderPaid(orderId, provider, reference) {
     }
   })
 
+  // ============ Digital fulfillment ============
+  // For downloadable + code products, deliver via email
+  try {
+    await fulfillDigitalProducts(order)
+  } catch (e) {
+    console.error('Digital fulfillment failed:', e.message)
+  }
+
+  // ============ Send order confirmation email ============
+  try {
+    const { sendOrderConfirmation } = await import('../email')
+    await sendOrderConfirmation(order)
+  } catch (e) {
+    console.error('Order confirmation email failed:', e.message)
+  }
+
   return order
+}
+
+// ============ Digital product fulfillment ============
+async function fulfillDigitalProducts(order) {
+  const digitalItems = order.items.filter(it => {
+    // We need to check the product type — fetch products
+    return true
+  })
+
+  // Fetch the products to check their type
+  const productIds = [...new Set(order.items.map(it => it.productId))]
+  const products = await db.product.findMany({
+    where: { id: { in: productIds } }
+  })
+  const productMap = new Map(products.map(p => [p.id, p]))
+
+  for (const item of order.items) {
+    const product = productMap.get(item.productId)
+    if (!product) continue
+
+    if (product.productType === 'downloadable' && product.downloadUrl) {
+      // Create download fulfillment record
+      const fulfillment = await db.orderFulfillment.create({
+        data: {
+          orderId: order.id,
+          orderItemId: item.id,
+          productId: product.id,
+          fulfillmentType: 'download_link',
+          downloadUrl: product.downloadUrl,
+          downloadLimit: product.downloadLimit || 0
+        }
+      })
+
+      // Email customer the download link
+      try {
+        const { sendDigitalFulfillment } = await import('../email')
+        await sendDigitalFulfillment(order, fulfillment)
+      } catch (e) {
+        console.error('Download email failed:', e.message)
+      }
+    }
+
+    if (product.productType === 'code' && product.codePool) {
+      // Pick a code from the pool (not already delivered)
+      let pool = JSON.parse(product.codePool || '[]')
+      let delivered = JSON.parse(product.codePoolDelivered || '[]')
+      const available = pool.filter(c => !delivered.includes(c))
+
+      for (let q = 0; q < item.quantity; q++) {
+        if (available.length === 0) {
+          console.warn(`Code pool exhausted for product ${product.id}`)
+          break
+        }
+        const code = available.shift()
+        delivered.push(code)
+
+        const fulfillment = await db.orderFulfillment.create({
+          data: {
+            orderId: order.id,
+            orderItemId: item.id,
+            productId: product.id,
+            fulfillmentType: 'code',
+            code
+          }
+        })
+
+        // Email customer the code
+        try {
+          const { sendDigitalFulfillment } = await import('../email')
+          await sendDigitalFulfillment(order, fulfillment)
+        } catch (e) {
+          console.error('Code email failed:', e.message)
+        }
+      }
+
+      // Update the product's delivered codes
+      await db.product.update({
+        where: { id: product.id },
+        data: {
+          codePoolDelivered: JSON.stringify(delivered),
+          // Update inventory to reflect available codes
+          inventoryQty: Math.max(0, pool.length - delivered.length),
+          isOutOfStock: (pool.length - delivered.length) <= 0
+        }
+      })
+    }
+  }
 }
 
 export async function updateOrderStatus(orderId, status, extra = {}) {

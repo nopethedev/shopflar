@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
 import { toast } from '@/lib/toast'
 import { slugify } from '@/lib/settings'
-import { Plus, Trash2, Upload, X, Save, ArrowLeft, Star } from 'lucide-react'
+import { Plus, Trash2, Upload, X, Save, ArrowLeft, Star, Package, Download, Ticket } from 'lucide-react'
 import Link from 'next/link'
 
 const emptyProduct = {
@@ -21,6 +21,8 @@ const emptyProduct = {
   inventoryQty: 0, lowStockThreshold: 5, status: 'DRAFT', featured: false,
   weight: null, length: null, width: null, height: null,
   seoTitle: '', seoDescription: '',
+  productType: 'physical', downloadUrl: '', downloadLimit: 0,
+  codePoolText: '',  // textarea content, one code per line
   images: [], variants: [], categoryIds: [], tags: []
 }
 
@@ -33,6 +35,17 @@ export function ProductEditor({ product, categories }) {
     costPrice: product.costPrice,
     weight: product.weight,
     length: product.length, width: product.width, height: product.height,
+    productType: product.productType || 'physical',
+    downloadUrl: product.downloadUrl || '',
+    downloadLimit: product.downloadLimit || 0,
+    codePoolText: (() => {
+      try {
+        const pool = JSON.parse(product.codePool || '[]')
+        const delivered = JSON.parse(product.codePoolDelivered || '[]')
+        const available = pool.filter(c => !delivered.includes(c))
+        return available.join('\n')
+      } catch { return '' }
+    })(),
     categoryIds: product.categories.map(c => c.categoryId),
     images: product.images.map(i => ({ ...i, isNew: false })),
     variants: product.variants.map(v => ({ ...v, options: typeof v.options === 'string' ? JSON.parse(v.options) : v.options })),
@@ -93,6 +106,11 @@ export function ProductEditor({ product, categories }) {
 
     try {
       const slug = form.slug || slugify(form.name)
+      // Parse code pool from textarea (one code per line)
+      const codePool = form.productType === 'code'
+        ? JSON.stringify(form.codePoolText.split('\n').map(c => c.trim()).filter(Boolean))
+        : null
+
       const payload = {
         name: form.name,
         slug: slug === product?.slug ? slug : slug + (product ? '' : ''),
@@ -103,17 +121,21 @@ export function ProductEditor({ product, categories }) {
         costPrice: form.costPrice ? Number(form.costPrice) : null,
         sku: form.sku || null,
         barcode: form.barcode || null,
-        inventoryQty: parseInt(form.inventoryQty) || 0,
+        inventoryQty: form.productType === 'physical' ? (parseInt(form.inventoryQty) || 0) : (form.productType === 'code' ? form.codePoolText.split('\n').filter(c => c.trim()).length : 1),
         lowStockThreshold: parseInt(form.lowStockThreshold) || 5,
         status: form.status,
         featured: !!form.featured,
-        isOutOfStock: parseInt(form.inventoryQty) <= 0,
+        isOutOfStock: form.productType === 'physical' ? (parseInt(form.inventoryQty) <= 0) : (form.productType === 'code' ? form.codePoolText.split('\n').filter(c => c.trim()).length === 0 : false),
         weight: form.weight ? Number(form.weight) : null,
         length: form.length ? Number(form.length) : null,
         width: form.width ? Number(form.width) : null,
         height: form.height ? Number(form.height) : null,
         seoTitle: form.seoTitle || null,
         seoDescription: form.seoDescription || null,
+        productType: form.productType,
+        downloadUrl: form.productType === 'downloadable' ? (form.downloadUrl || null) : null,
+        downloadLimit: form.productType === 'downloadable' ? (parseInt(form.downloadLimit) || 0) : 0,
+        codePool: codePool,
         categoryIds: form.categoryIds,
         tags: form.tags,
         images: form.images.map((i, idx) => ({ id: i.isNew ? undefined : i.id, url: i.url, sortOrder: idx, altText: i.altText || null })),
@@ -176,6 +198,7 @@ export function ProductEditor({ product, categories }) {
       <Tabs defaultValue="general">
         <TabsList className="w-full overflow-x-auto flex justify-start h-auto">
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="digital">Product Type</TabsTrigger>
           <TabsTrigger value="images">Images</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
@@ -213,6 +236,96 @@ export function ProductEditor({ product, categories }) {
               </div>
               <Switch checked={form.featured} onCheckedChange={(c) => set('featured', c)} />
             </div>
+          </Card>
+        </TabsContent>
+
+        {/* PRODUCT TYPE */}
+        <TabsContent value="digital" className="mt-4">
+          <Card className="p-5 space-y-4">
+            <div>
+              <Label>Product Type</Label>
+              <p className="text-xs text-muted-foreground mb-3">Choose how this product is fulfilled after purchase.</p>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <button
+                  type="button"
+                  onClick={() => set('productType', 'physical')}
+                  className={`text-left p-4 rounded-md border-2 transition-colors ${form.productType === 'physical' ? 'border-foreground bg-muted/30' : 'border-border hover:border-foreground/40'}`}
+                >
+                  <Package className="h-5 w-5 mb-2" />
+                  <p className="text-sm font-medium">Physical</p>
+                  <p className="text-xs text-muted-foreground mt-1">Shipped product with inventory tracking</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set('productType', 'downloadable')}
+                  className={`text-left p-4 rounded-md border-2 transition-colors ${form.productType === 'downloadable' ? 'border-foreground bg-muted/30' : 'border-border hover:border-foreground/40'}`}
+                >
+                  <Download className="h-5 w-5 mb-2" />
+                  <p className="text-sm font-medium">Downloadable</p>
+                  <p className="text-xs text-muted-foreground mt-1">Digital file — customer gets a download link by email</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set('productType', 'code')}
+                  className={`text-left p-4 rounded-md border-2 transition-colors ${form.productType === 'code' ? 'border-foreground bg-muted/30' : 'border-border hover:border-foreground/40'}`}
+                >
+                  <Ticket className="h-5 w-5 mb-2" />
+                  <p className="text-sm font-medium">Code / License</p>
+                  <p className="text-xs text-muted-foreground mt-1">Customer gets a unique code from your pool (gift cards, license keys)</p>
+                </button>
+              </div>
+            </div>
+
+            {form.productType === 'downloadable' && (
+              <div className="space-y-3 pt-4 border-t border-border">
+                <div>
+                  <Label>Download URL</Label>
+                  <Input value={form.downloadUrl} onChange={(e) => set('downloadUrl', e.target.value)} placeholder="https://example.com/file.zip" className="font-mono text-sm" />
+                  <p className="text-xs text-muted-foreground mt-1">Link to the file customers will download. Use a Supabase Storage signed URL for secure downloads.</p>
+                </div>
+                <div>
+                  <Label>Download Limit (0 = unlimited)</Label>
+                  <Input type="number" min="0" value={form.downloadLimit} onChange={(e) => set('downloadLimit', e.target.value)} />
+                  <p className="text-xs text-muted-foreground mt-1">Maximum number of times the link can be used per order.</p>
+                </div>
+              </div>
+            )}
+
+            {form.productType === 'code' && (
+              <div className="space-y-3 pt-4 border-t border-border">
+                <div>
+                  <Label>Code Pool</Label>
+                  <Textarea
+                    rows={10}
+                    value={form.codePoolText}
+                    onChange={(e) => set('codePoolText', e.target.value)}
+                    placeholder={'ABCD-1234-EFGH\nIJKL-5678-MNOP\nQRST-9012-UVWX\n...'}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    One code per line. When a customer buys this product, they receive one code by email.
+                    Delivered codes are tracked and removed from the pool automatically.
+                    <strong> Available: {form.codePoolText.split('\n').filter(c => c.trim()).length} codes.</strong>
+                  </p>
+                </div>
+                {product?.codePoolDelivered && (
+                  <div className="p-3 rounded-md bg-muted/30 text-xs text-muted-foreground">
+                    {(() => {
+                      try {
+                        const delivered = JSON.parse(product.codePoolDelivered || '[]')
+                        return <>{delivered.length} code{delivered.length !== 1 ? 's' : ''} already delivered to customers.</>
+                      } catch { return 'Codes delivered (count unavailable)' }
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {form.productType === 'physical' && (
+              <div className="p-3 rounded-md bg-muted/30 text-xs text-muted-foreground">
+                Physical products use standard inventory tracking and shipping. Configure quantity in the Inventory tab.
+              </div>
+            )}
           </Card>
         </TabsContent>
 

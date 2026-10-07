@@ -42,8 +42,8 @@ export async function getStoreSettings() {
       newArrivalsTitle: get('new_arrivals_title', 'New Arrivals')
     },
     newsletter: {
-      title: get('newsletter_title', 'Get 10% off your first order'),
-      subtitle: get('newsletter_subtitle', '')
+      title: get('newsletter_prompt_title', get('newsletter_title', 'Get 10% off your first order')),
+      subtitle: get('newsletter_prompt_subtitle', get('newsletter_subtitle', 'Subscribe to our newsletter for early access to new drops, exclusive offers, and styling tips.'))
     }
   }
 }

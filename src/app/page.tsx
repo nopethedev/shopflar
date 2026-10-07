@@ -3,13 +3,14 @@ import { db } from '@/lib/db'
 import { getStoreSettings } from '@/lib/settings'
 import { StorefrontLayout } from '@/components/storefront/storefront-layout'
 import { ProductCard } from '@/components/storefront/product-card'
+import { NewsletterForm } from '@/components/storefront/newsletter-form'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, Truck, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
-  const [settings, categories, featured, newArrivals] = await Promise.all([
+  const [settings, categories, featured, newArrivals, customSections] = await Promise.all([
     getStoreSettings(),
     db.category.findMany({
       where: { isVisible: true, parentId: null },
@@ -28,8 +29,24 @@ export default async function HomePage() {
       include: { images: true, categories: { include: { category: true } }, variants: true, mysteryCrate: true },
       orderBy: { createdAt: 'desc' },
       take: 4
+    }),
+    db.pageSection.findMany({
+      where: { pageType: 'home' },
+      orderBy: { sortOrder: 'asc' }
     })
   ])
+
+  // If custom sections exist, render those instead of the default layout
+  if (customSections.length > 0) {
+    const { SectionRenderer } = await import('@/components/storefront/section-renderer')
+    return (
+      <StorefrontLayout settings={settings} categories={categories}>
+        {customSections.map(section => (
+          <SectionRenderer key={section.id} section={section} />
+        ))}
+      </StorefrontLayout>
+    )
+  }
 
   return (
     <StorefrontLayout settings={settings} categories={categories}>
@@ -202,21 +219,8 @@ export default async function HomePage() {
             {settings.newsletter.title}
           </h2>
           <p className="mt-3 opacity-80">{settings.newsletter.subtitle}</p>
-          <form className="mt-8 flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-            <input
-              type="email"
-              required
-              placeholder="you@example.com"
-              className="flex-1 h-11 px-4 rounded-md bg-background/10 border border-background/20 text-background placeholder:text-background/60 focus:outline-none focus:ring-2 focus:ring-background/40"
-            />
-            <button
-              type="submit"
-              className="h-11 px-6 rounded-md bg-background text-foreground font-medium hover:bg-background/90 transition-colors"
-            >
-              Subscribe
-            </button>
-          </form>
-          <p className="mt-3 text-xs opacity-60">By subscribing, you agree to our Privacy Policy.</p>
+          <NewsletterForm variant="dark" />
+          <p className="mt-3 text-xs opacity-60">By subscribing, you agree to our <Link href="/privacy" className="underline">Privacy Policy</Link>. You can unsubscribe at any time.</p>
         </div>
       </section>
     </StorefrontLayout>

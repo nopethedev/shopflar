@@ -110,6 +110,12 @@ model Product {
   seoDescription String?
   ogImage        String?
   publishedAt    DateTime?
+  // Product type: physical (default), downloadable (digital file), code (license/gift card pool)
+  productType   String   @default("physical") // physical | downloadable | code
+  downloadUrl   String?  // for downloadable products (file URL or Supabase storage path)
+  downloadLimit Int      @default(0) // 0 = unlimited
+  codePool      String?  // JSON array of codes for "code" type products
+  codePoolDelivered String? // JSON array of codes already assigned to orders
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -521,4 +527,58 @@ model CookieConsent {
   updatedAt   DateTime @updatedAt
 
   @@map("cookie_consents")
+}
+
+// ============ PAGE SECTIONS (page builder) ============
+// Sections are stored as a JSON array in the page's `sections` field.
+// Each section has: { id, type, config, sortOrder }
+// Section types: hero, product-grid, marquee, text, image, newsletter, custom-html, categories
+
+model PageSection {
+  id          String   @id @default(cuid())
+  pageType    String   @default("home") // home | product | custom
+  pageId      String?  // for custom pages, references CustomPage.id
+  sectionType String   // hero | product-grid | marquee | text | image | newsletter | custom-html | categories
+  config      String   // JSON config for the section
+  sortOrder   Int      @default(0)
+  isVisible   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("page_sections")
+  @@index([pageType, pageId])
+}
+
+// ============ DIGITAL FULFILLMENT ============
+// Tracks download links and codes delivered with each order
+
+model OrderFulfillment {
+  id          String   @id @default(cuid())
+  orderId     String
+  orderItemId String
+  productId   String
+  fulfillmentType String // download_link | code
+  downloadUrl String?
+  downloadLimit Int @default(0)
+  downloadCount Int @default(0)
+  code        String?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@map("order_fulfillments")
+  @@index([orderId])
+}
+
+// ============ EMAIL LOG ============
+
+model EmailLog {
+  id          String   @id @default(cuid())
+  to          String
+  subject     String
+  body        String
+  status      String   @default("pending") // pending | sent | failed
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@map("email_logs")
 }

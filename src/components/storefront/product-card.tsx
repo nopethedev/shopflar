@@ -70,6 +70,16 @@ export function ProductCard({ product, index = 0 }) {
               🎁 Mystery
             </span>
           )}
+          {product.productType === 'downloadable' && (
+            <span className="bg-blue-600 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
+              Digital
+            </span>
+          )}
+          {product.productType === 'code' && (
+            <span className="bg-emerald-600 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
+              License
+            </span>
+          )}
           {onSale && (
             <span className="bg-foreground text-background text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
               -{discountPct}%
