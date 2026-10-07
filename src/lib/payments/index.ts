@@ -19,7 +19,7 @@ export class PaymentError extends Error {
 let credCache = { ts: 0, data: new Map() }
 const CRED_TTL = 1000 * 30 // 30 seconds
 
-async function getCredential(key) {
+export async function getCredential(key) {
   const now = Date.now()
   if (now - credCache.ts > CRED_TTL) {
     try {

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Production start script — auto-builds if .next doesn't exist
 # Usage:
-#   ./start-prod.sh                 # builds (if needed) and starts on port 3000
-#   PORT=8080 ./start-prod.sh       # builds (if needed) and starts on port 8080
+#   ./scripts/start-prod.sh                          # builds (if needed) and starts on 0.0.0.0:3000
+#   PORT=8080 ./scripts/start-prod.sh                # builds (if needed) and starts on 0.0.0.0:8080
+#   PORT=8080 HOST=127.0.0.1 ./scripts/start-prod.sh # localhost only
 
 set -e
 
 PORT="${PORT:-3000}"
-export PORT
+HOST="${HOST:-0.0.0.0}"
+export PORT HOST
 export NEXT_PUBLIC_APP_URL="${NEXT_PUBLIC_APP_URL:-http://localhost:$PORT}"
 export APP_URL="${APP_URL:-$NEXT_PUBLIC_APP_URL}"
 
@@ -23,7 +25,7 @@ else
   echo "→ Found existing build (.next/BUILD_ID exists)"
 fi
 
-echo "→ Starting production server on port $PORT..."
+echo "→ Starting production server on $HOST:$PORT..."
 echo "→ App URL: $NEXT_PUBLIC_APP_URL"
 echo ""
 $PM run start

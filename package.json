@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p ${PORT:-3000}",
+    "dev": "next dev -H ${HOST:-0.0.0.0} -p ${PORT:-3000}",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "next start -H ${HOST:-0.0.0.0} -p ${PORT:-3000}",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
