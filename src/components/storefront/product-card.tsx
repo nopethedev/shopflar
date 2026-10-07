@@ -65,6 +65,11 @@ export function ProductCard({ product, index = 0 }) {
 
         {/* Badges */}
         <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+          {product.mysteryCrate && (
+            <span className="bg-purple-600 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded flex items-center gap-1">
+              🎁 Mystery
+            </span>
+          )}
           {onSale && (
             <span className="bg-foreground text-background text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
               -{discountPct}%

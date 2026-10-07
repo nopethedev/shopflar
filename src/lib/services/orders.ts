@@ -177,6 +177,79 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
     }).catch(() => {})
   }
 
+  // ============ Mystery Crate expansion ============
+  // For each item that's a mystery crate, add the guaranteed + random items
+  try {
+    const mysteryCrates = await db.mysteryCrate.findMany({
+      where: { productId: { in: calc.items.map(it => it.productId) } },
+      include: { product: { include: { images: { take: 1, orderBy: { sortOrder: 'asc' } } } } }
+    })
+
+    for (const crate of mysteryCrates) {
+      const orderItem = order.items.find(it => it.productId === crate.productId)
+      if (!orderItem) continue
+      const crateQuantity = orderItem.quantity
+
+      const guaranteed = JSON.parse(crate.guaranteedItems || '[]')
+      const pool = JSON.parse(crate.poolItems || '[]')
+
+      // Add guaranteed items (multiplied by crate quantity)
+      for (const g of guaranteed) {
+        const product = await db.product.findUnique({
+          where: { id: g.productId },
+          select: { id: true, name: true, sku: true, images: { take: 1, orderBy: { sortOrder: 'asc' } } }
+        })
+        if (!product) continue
+        await db.orderItem.create({
+          data: {
+            orderId: order.id,
+            productId: product.id,
+            name: `${product.name} (Mystery Crate — guaranteed)`,
+            sku: product.sku,
+            price: 0, // bonus item, no extra charge
+            quantity: (g.quantity || 1) * crateQuantity,
+            imageUrl: product.images?.[0]?.url || null
+          }
+        })
+      }
+
+      // Random picks from pool (weighted)
+      if (pool.length > 0 && crate.poolSize > 0) {
+        for (let q = 0; q < crateQuantity; q++) {
+          for (let pick = 0; pick < crate.poolSize; pick++) {
+            const totalWeight = pool.reduce((s, p) => s + (p.weight || 1), 0)
+            if (totalWeight <= 0) break
+            let rand = Math.random() * totalWeight
+            let chosen = pool[0]
+            for (const p of pool) {
+              rand -= (p.weight || 1)
+              if (rand <= 0) { chosen = p; break }
+            }
+            const product = await db.product.findUnique({
+              where: { id: chosen.productId },
+              select: { id: true, name: true, sku: true, images: { take: 1, orderBy: { sortOrder: 'asc' } } }
+            })
+            if (!product) continue
+            await db.orderItem.create({
+              data: {
+                orderId: order.id,
+                productId: product.id,
+                name: `${product.name} (Mystery Crate — surprise!)`,
+                sku: product.sku,
+                price: 0,
+                quantity: 1,
+                imageUrl: product.images?.[0]?.url || null
+              }
+            })
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Mystery crate expansion failed:', e.message)
+    // Don't fail the order if mystery crate expansion fails
+  }
+
   // Decrement inventory
   for (const it of calc.items) {
     if (it.variantId) {

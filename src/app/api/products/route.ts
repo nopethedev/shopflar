@@ -47,7 +47,8 @@ export async function GET(req) {
       include: {
         images: { orderBy: { sortOrder: 'asc' }, take: 2 },
         categories: { include: { category: true } },
-        variants: true
+        variants: true,
+        mysteryCrate: true
       },
       orderBy,
       skip: (page - 1) * limit,

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Minus, Plus, ShoppingBag, Heart, Truck, RotateCcw, ShieldCheck, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { ReviewForm } from './review-form'
 
 export function ProductDetail({ product, settings }) {
   const [selectedImage, setSelectedImage] = useState(0)
@@ -277,18 +278,21 @@ export function ProductDetail({ product, settings }) {
         )}
 
         {/* Reviews */}
-        {product.reviews && product.reviews.length > 0 && (
-          <div className="mt-10 border-t border-border pt-8">
-            <h2 className="text-xl font-semibold mb-4" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>
+        <div className="mt-10 border-t border-border pt-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>
               Customer Reviews
             </h2>
+            <ReviewForm productId={product.id} />
+          </div>
+          {product.reviews && product.reviews.length > 0 ? (
             <div className="space-y-4">
               {product.reviews.map(r => (
                 <div key={r.id} className="border-b border-border/60 pb-4 last:border-0">
                   <div className="flex items-center gap-2">
-                    <div className="flex">
+                    <div className="flex" aria-label={`Rating: ${r.rating} out of 5 stars`}>
                       {Array.from({ length: 5 }).map((_, i) => (
-                        <span key={i} className={`text-sm ${i < r.rating ? 'text-amber-500' : 'text-muted'}`}>★</span>
+                        <span key={i} className={`text-sm ${i < r.rating ? 'text-amber-500' : 'text-muted'}`} aria-hidden="true">★</span>
                       ))}
                     </div>
                     <span className="text-sm font-medium">{r.authorName}</span>
@@ -299,8 +303,10 @@ export function ProductDetail({ product, settings }) {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-sm text-muted-foreground">Be the first to review this product.</p>
+          )}
+        </div>
       </div>
     </div>
   )

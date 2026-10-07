@@ -54,7 +54,7 @@ export default async function ProductPage({ params }) {
         { tags: { some: { tag: { in: product.tags.map(t => t.tag) } } } }
       ]
     },
-    include: { images: true, categories: { include: { category: true } }, variants: true },
+    include: { images: true, categories: { include: { category: true } }, variants: true, mysteryCrate: true },
     take: 4
   })
 

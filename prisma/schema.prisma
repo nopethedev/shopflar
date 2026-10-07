@@ -122,6 +122,7 @@ model Product {
   printifyLink   PrintifyProductLink?
   tags           ProductTag[]
   wishlistItems  WishlistItem[]
+  mysteryCrate   MysteryCrate?
 
   @@map("products")
   @@index([status])
@@ -453,4 +454,71 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@map("audit_logs")
+}
+
+// ============ CUSTOM PAGES (site builder) ============
+
+model CustomPage {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  content     String   // HTML or markdown
+  excerpt     String?
+  status      String   @default("PUBLISHED") // DRAFT | PUBLISHED
+  showInNav   Boolean  @default(false)
+  navLabel    String?
+  sortOrder   Int      @default(0)
+  seoTitle    String?
+  seoDescription String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("custom_pages")
+}
+
+// ============ PLUGINS ============
+
+model Plugin {
+  id          String   @id @default(cuid())
+  slug        String   @unique  // e.g. "mystery-crate"
+  name        String
+  description String?
+  enabled     Boolean  @default(false)
+  config      String?  // JSON string of plugin-specific config
+  installedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("plugins")
+}
+
+// ============ MYSTERY CRATE PLUGIN ============
+// A mystery crate is a product that, when purchased, includes random items
+// from a configured pool with specified probabilities.
+
+model MysteryCrate {
+  id          String   @id @default(cuid())
+  productId   String   @unique
+  guaranteedItems String // JSON: [{productId, quantity}] — always included
+  poolItems   String   // JSON: [{productId, weight}] — chance-based items
+  poolSize    Int      @default(1) // how many random items from pool to include
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("mystery_crates")
+}
+
+// ============ COOKIE CONSENT ============
+
+model CookieConsent {
+  id          String   @id @default(cuid())
+  visitorId   String   @unique
+  consent     String   // "all" | "essential" | "none"
+  categories  String   // JSON: ["essential","analytics","marketing"]
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("cookie_consents")
 }

@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { useSession } from './session-provider'
 
-export function StoreHeader({ settings, categories }) {
+export function StoreHeader({ settings, categories, customPages = [] }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -31,6 +31,7 @@ export function StoreHeader({ settings, categories }) {
   const nav = [
     { label: 'Shop All', href: '/products' },
     ...categories.filter(c => !c.parentId).slice(0, 5).map(c => ({ label: c.name, href: `/categories/${c.slug}` })),
+    ...customPages.map(p => ({ label: p.navLabel || p.title, href: `/pages/${p.slug}` })),
     { label: 'Sale', href: '/products?sale=true' }
   ]
 

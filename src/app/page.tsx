@@ -19,13 +19,13 @@ export default async function HomePage() {
     }),
     db.product.findMany({
       where: { status: 'PUBLISHED', featured: true },
-      include: { images: true, categories: { include: { category: true } }, variants: true },
+      include: { images: true, categories: { include: { category: true } }, variants: true, mysteryCrate: true },
       orderBy: { createdAt: 'desc' },
       take: 8
     }),
     db.product.findMany({
       where: { status: 'PUBLISHED' },
-      include: { images: true, categories: { include: { category: true } }, variants: true },
+      include: { images: true, categories: { include: { category: true } }, variants: true, mysteryCrate: true },
       orderBy: { createdAt: 'desc' },
       take: 4
     })

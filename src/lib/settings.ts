@@ -109,3 +109,61 @@ export function generateOrderNumber() {
   const n = Math.floor(1000 + Math.random() * 9000)
   return `#${String(Date.now()).slice(-5)}${n}`
 }
+
+// ============ Business details (optional) ============
+export async function getBusinessDetails() {
+  const get = async (k, d = '') => {
+    const v = await getStoreSettingValue(k)
+    return v || d
+  }
+  return {
+    businessName: await get('business_name', ''),
+    legalName: await get('business_legal_name', ''),
+    registrationNumber: await get('business_registration_number', ''),
+    vatNumber: await get('business_vat_number', ''),
+    addressLine1: await get('business_address_line1', ''),
+    addressLine2: await get('business_address_line2', ''),
+    city: await get('business_city', ''),
+    state: await get('business_state', ''),
+    postalCode: await get('business_postal_code', ''),
+    country: await get('business_country', ''),
+    phone: await get('business_phone', ''),
+    email: await get('store_email', ''),
+    website: await getAppUrl()
+  }
+}
+
+export async function getLegalContent(key, defaultContent = '') {
+  // Read policy/legal content stored in DB by admin
+  const v = await getStoreSettingValue(`legal_${key}`)
+  return v || defaultContent
+}
+
+export async function getPlugins() {
+  try {
+    const rows = await db.plugin.findMany({ orderBy: { slug: 'asc' } })
+    return rows
+  } catch {
+    return []
+  }
+}
+
+export async function isPluginEnabled(slug) {
+  try {
+    const row = await db.plugin.findUnique({ where: { slug } })
+    return row?.enabled || false
+  } catch {
+    return false
+  }
+}
+
+export async function getCustomNavPages() {
+  try {
+    return await db.customPage.findMany({
+      where: { status: 'PUBLISHED', showInNav: true },
+      orderBy: { sortOrder: 'asc' }
+    })
+  } catch {
+    return []
+  }
+}
