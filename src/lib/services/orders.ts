@@ -128,6 +128,13 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
     region: shippingAddress.state
   })
 
+  // ============ Sale limit check ============
+  const { getSaleLimitStatus } = await import('../settings')
+  const saleLimit = await getSaleLimitStatus()
+  if (saleLimit.enabled && saleLimit.exceeded) {
+    throw new Error('Sale limit reached. New orders are temporarily disabled.')
+  }
+
   const order = await db.order.create({
     data: {
       orderNumber: generateOrderNumber(),

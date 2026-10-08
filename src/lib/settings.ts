@@ -167,3 +167,74 @@ export async function getCustomNavPages() {
     return []
   }
 }
+
+// ============ Store Mode: normal | maintenance | prelaunch ============
+export async function getStoreMode() {
+  const get = async (settingKey, defaultValue) => {
+    try {
+      const row = await db.storeSetting.findUnique({ where: { key: settingKey } })
+      return row?.value || defaultValue
+    } catch { return defaultValue }
+  }
+
+  const maintenanceEnabled = await get('maintenance_enabled', 'false')
+  const prelaunchEnabled = await get('prelaunch_enabled', 'false')
+
+  if (maintenanceEnabled === 'true') {
+    return {
+      mode: 'maintenance',
+      message: await get('maintenance_message', 'We\'ll be back shortly. Thanks for your patience.'),
+      title: await get('maintenance_title', 'Under Maintenance'),
+      image: await get('maintenance_image', ''),
+      launchDate: null
+    }
+  }
+
+  if (prelaunchEnabled === 'true') {
+    const launchDate = await get('prelaunch_launch_date', '')
+    return {
+      mode: 'prelaunch',
+      title: await get('prelaunch_title', 'Something Amazing Is Coming'),
+      subtitle: await get('prelaunch_subtitle', 'We\'re putting the finishing touches on our store. Be the first to know when we launch.'),
+      image: await get('prelaunch_image', ''),
+      launchDate: launchDate || null,
+      launchDateObj: launchDate ? new Date(launchDate) : null
+    }
+  }
+
+  return { mode: 'normal' }
+}
+
+// ============ Sale Limit ============
+export async function getSaleLimitStatus() {
+  const get = async (settingKey, defaultValue) => {
+    try {
+      const row = await db.storeSetting.findUnique({ where: { key: settingKey } })
+      return row?.value || defaultValue
+    } catch { return defaultValue }
+  }
+
+  const enabled = await get('sale_limit_enabled', 'false')
+  const limit = parseFloat(await get('sale_limit_amount', '0')) || 0
+  const warningThreshold = parseFloat(await get('sale_limit_warning', '90')) || 90
+
+  if (enabled !== 'true' || limit <= 0) {
+    return { enabled: false, limit: 0, total: 0, remaining: 0, percentage: 0, warning: false, exceeded: false }
+  }
+
+  // Calculate total sales from paid orders
+  const result = await db.order.aggregate({
+    _sum: { total: true },
+    where: {
+      status: { in: ['PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED'] }
+    }
+  }).catch(() => ({ _sum: { total: 0 } }))
+
+  const total = result._sum?.total || 0
+  const remaining = Math.max(0, limit - total)
+  const percentage = Math.min(100, (total / limit) * 100)
+  const warning = percentage >= warningThreshold
+  const exceeded = total >= limit
+
+  return { enabled: true, limit, total, remaining, percentage, warning, exceeded }
+}

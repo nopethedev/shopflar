@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ShoppingCart, Package, Tags, Users,
   Percent, Mail, Truck, Receipt, CreditCard, Plug,
-  Palette, Settings, UserCog, ChevronRight, Star, FileText, Puzzle, BarChart3, Layout
+  Palette, Settings, UserCog, ChevronRight, Star, FileText, Puzzle, BarChart3, Layout, Wrench
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -48,6 +48,7 @@ const sections = [
   {
     title: 'Configuration',
     items: [
+      { label: 'Store Mode', href: '/admin/store-mode', icon: Wrench },
       { label: 'Appearance', href: '/admin/appearance', icon: Palette },
       { label: 'Email & SMTP', href: '/admin/email', icon: Mail },
       { label: 'Business Details', href: '/admin/business', icon: Receipt },
