@@ -65,6 +65,31 @@ export default async function ReturnsPage() {
               <li>Cash on delivery refunds: 7-10 business days via bank transfer</li>
             </ul>
 
+            <h2 className="text-foreground">EU Consumer Rights</h2>
+            <p>
+              <strong>Right of Withdrawal (14 days):</strong> If you are an EU consumer, you have the right to withdraw from your purchase within
+              14 days of receiving your order, without giving any reason. You must return the goods within 14 days of notifying us of your withdrawal.
+              The cost of return shipping is borne by the consumer unless the item is defective.
+            </p>
+            <p>
+              <strong>Statutory Warranty (2 years):</strong> All products sold to EU consumers are covered by a 2-year legal warranty of conformity.
+              If a product is defective or not as described, you are entitled to a repair, replacement, or refund at no cost to you within 2 years of delivery.
+            </p>
+            <p>
+              <strong>Exceptions:</strong> Personalised/custom-made products are exempt from the 14-day right of withdrawal. Digital content downloads
+              are exempt once the download has begun with your consent.
+            </p>
+            <p>
+              <strong>Withdrawal Form:</strong> To exercise your right of withdrawal, email us at{' '}
+              <a href={`mailto:${business.email || settings.storeEmail}`} className="text-foreground hover:underline">{business.email || settings.storeEmail}</a>{' '}
+              with your order number and a statement of withdrawal.
+            </p>
+            <p>
+              <strong>EU Dispute Resolution:</strong> The European Commission provides an online dispute resolution platform at{' '}
+              <a href="https://ec.europa.eu/consumers/odr" target="_blank" rel="noopener noreferrer" className="text-foreground hover:underline">ec.europa.eu/consumers/odr</a>.
+              We are not obliged to participate in dispute resolution proceedings before a consumer arbitration body.
+            </p>
+
             {business.businessName && (
               <div className="mt-8 p-4 rounded-md bg-muted/30 border border-border">
                 <h3 className="text-foreground font-semibold mb-2">Contact</h3>

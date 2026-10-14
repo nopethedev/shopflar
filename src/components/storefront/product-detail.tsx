@@ -277,6 +277,56 @@ export function ProductDetail({ product, settings }) {
           </div>
         )}
 
+        {/* EU Compliance Info */}
+        {(product.fibreComposition || product.countryOfOrigin || product.careInstructions || product.safetyWarnings || product.warrantyInfo) && (
+          <div className="mt-10 border-t border-border pt-8">
+            <h2 className="text-xl font-semibold mb-3" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>
+              Product Details
+            </h2>
+            <dl className="space-y-2 text-sm">
+              {product.fibreComposition && (
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground shrink-0 w-40">Fibre composition:</dt>
+                  <dd className="text-muted-foreground">{product.fibreComposition}</dd>
+                </div>
+              )}
+              {product.countryOfOrigin && (
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground shrink-0 w-40">Country of origin:</dt>
+                  <dd className="text-muted-foreground">{product.countryOfOrigin}</dd>
+                </div>
+              )}
+              {product.manufacturerName && (
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground shrink-0 w-40">Manufacturer:</dt>
+                  <dd className="text-muted-foreground">{product.manufacturerName}{product.manufacturerAddress ? `, ${product.manufacturerAddress}` : ''}</dd>
+                </div>
+              )}
+              {product.careInstructions && (
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground shrink-0 w-40">Care instructions:</dt>
+                  <dd className="text-muted-foreground">{product.careInstructions}</dd>
+                </div>
+              )}
+              {product.safetyWarnings && (
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground shrink-0 w-40">Safety warnings:</dt>
+                  <dd className="text-muted-foreground whitespace-pre-line">{product.safetyWarnings}</dd>
+                </div>
+              )}
+              {product.warrantyInfo && (
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground shrink-0 w-40">Warranty:</dt>
+                  <dd className="text-muted-foreground">{product.warrantyInfo}</dd>
+                </div>
+              )}
+            </dl>
+            <p className="text-xs text-muted-foreground mt-3">
+              Responsible person for product safety (EU GPSR): see our <Link href="/impressum" className="hover:underline">Impressum</Link>.
+            </p>
+          </div>
+        )}
+
         {/* Reviews */}
         <div className="mt-10 border-t border-border pt-8">
           <div className="flex items-center justify-between mb-4">

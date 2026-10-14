@@ -61,10 +61,16 @@ export function StoreFooter({ settings }) {
 
         <div className="mt-10 pt-6 border-t border-border flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
           <p>{settings.footerText || `© ${year} ${settings.storeName}. All rights reserved.`}</p>
-          <p className="flex items-center gap-3">
+          <p className="flex items-center gap-3 flex-wrap justify-center">
             <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
             <span>·</span>
             <Link href="/terms" className="hover:text-foreground">Terms</Link>
+            <span>·</span>
+            <Link href="/cookies" className="hover:text-foreground">Cookies</Link>
+            <span>·</span>
+            <Link href="/returns" className="hover:text-foreground">Returns</Link>
+            <span>·</span>
+            <Link href="/impressum" className="hover:text-foreground">Impressum</Link>
             <span>·</span>
             <Link href="/admin" className="hover:text-foreground">Admin</Link>
           </p>

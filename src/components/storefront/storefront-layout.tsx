@@ -6,15 +6,15 @@ import { SkipLink } from '@/components/storefront/skip-link'
 import { getCustomNavPages, getStoreMode } from '@/lib/settings'
 import { StoreModePage } from '@/components/storefront/store-mode-page'
 
-export async function StorefrontLayout({ children, settings, categories }) {
+export async function StorefrontLayout({ children, settings, categories, bypassModeCheck = false }) {
   const [customPages, storeMode] = await Promise.all([
     getCustomNavPages(),
     getStoreMode()
   ])
 
   // If store is in maintenance or prelaunch mode, show the mode page instead
-  // Admin routes are NOT affected (they use a separate layout)
-  if (storeMode.mode === 'maintenance' || storeMode.mode === 'prelaunch') {
+  // BUT skip for auth pages (login, signup, etc.) so admins can still log in
+  if (!bypassModeCheck && (storeMode.mode === 'maintenance' || storeMode.mode === 'prelaunch')) {
     return (
       <SessionProvider>
         <StoreModePage mode={storeMode.mode} config={storeMode} settings={settings} />

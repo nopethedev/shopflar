@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
 import { toast } from '@/lib/toast'
 import { slugify } from '@/lib/settings'
-import { Plus, Trash2, Upload, X, Save, ArrowLeft, Star, Package, Download, Ticket } from 'lucide-react'
+import { Plus, Trash2, Upload, X, Save, ArrowLeft, Star, Package, Download, Ticket, Shield } from 'lucide-react'
 import Link from 'next/link'
 
 const emptyProduct = {
@@ -136,6 +136,14 @@ export function ProductEditor({ product, categories }) {
         downloadUrl: form.productType === 'downloadable' ? (form.downloadUrl || null) : null,
         downloadLimit: form.productType === 'downloadable' ? (parseInt(form.downloadLimit) || 0) : 0,
         codePool: codePool,
+        // EU compliance fields
+        fibreComposition: form.fibreComposition || null,
+        countryOfOrigin: form.countryOfOrigin || null,
+        manufacturerName: form.manufacturerName || null,
+        manufacturerAddress: form.manufacturerAddress || null,
+        safetyWarnings: form.safetyWarnings || null,
+        careInstructions: form.careInstructions || null,
+        warrantyInfo: form.warrantyInfo || null,
         categoryIds: form.categoryIds,
         tags: form.tags,
         images: form.images.map((i, idx) => ({ id: i.isNew ? undefined : i.id, url: i.url, sortOrder: idx, altText: i.altText || null })),
@@ -206,6 +214,7 @@ export function ProductEditor({ product, categories }) {
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="seo">SEO</TabsTrigger>
           <TabsTrigger value="shipping">Shipping</TabsTrigger>
+          <TabsTrigger value="compliance">Compliance</TabsTrigger>
           {product?.printifyLink && <TabsTrigger value="printify">Printify</TabsTrigger>}
         </TabsList>
 
@@ -562,6 +571,81 @@ export function ProductEditor({ product, categories }) {
                 <Label>Height (cm)</Label>
                 <Input type="number" step="0.1" value={form.height || ''} onChange={(e) => set('height', e.target.value)} />
               </div>
+            </div>
+          </Card>
+        </TabsContent>
+
+        {/* COMPLIANCE (EU GPSR / Textile Labelling) */}
+        <TabsContent value="compliance" className="mt-4">
+          <Card className="p-5 space-y-4">
+            <div>
+              <h3 className="font-semibold flex items-center gap-2"><Shield className="h-4 w-4" /> EU Product Compliance</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Required for selling to EU/Germany customers (GPSR effective Dec 13, 2024 + EU Textile Labelling Regulation).
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Fibre Composition</Label>
+                <Input value={form.fibreComposition || ''} onChange={(e) => set('fibreComposition', e.target.value)} placeholder="100% cotton / 80% cotton, 20% polyester" />
+                <p className="text-xs text-muted-foreground mt-1">Required for textile products (≥80% textile fibres by weight)</p>
+              </div>
+              <div>
+                <Label className="text-xs">Country of Origin</Label>
+                <Input value={form.countryOfOrigin || ''} onChange={(e) => set('countryOfOrigin', e.target.value)} placeholder="Made in Bangladesh" />
+              </div>
+              <div>
+                <Label className="text-xs">Manufacturer Name</Label>
+                <Input value={form.manufacturerName || ''} onChange={(e) => set('manufacturerName', e.target.value)} placeholder="Printify / Print Provider" />
+              </div>
+              <div>
+                <Label className="text-xs">Manufacturer Address</Label>
+                <Input value={form.manufacturerAddress || ''} onChange={(e) => set('manufacturerAddress', e.target.value)} placeholder="Manufacturer address" />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs">Safety Warnings (one per line)</Label>
+              <Textarea
+                rows={3}
+                value={form.safetyWarnings || ''}
+                onChange={(e) => set('safetyWarnings', e.target.value)}
+                placeholder={'Keep away from fire&#10;Not suitable for children under 3'}
+              />
+              <p className="text-xs text-muted-foreground mt-1">Shown on the product page for EU customers</p>
+            </div>
+
+            <div>
+              <Label className="text-xs">Care Instructions</Label>
+              <Textarea
+                rows={2}
+                value={form.careInstructions || ''}
+                onChange={(e) => set('careInstructions', e.target.value)}
+                placeholder={'Machine wash cold. Tumble dry low. Do not iron print.'}
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs">Warranty Information</Label>
+              <Textarea
+                rows={2}
+                value={form.warrantyInfo || ''}
+                onChange={(e) => set('warrantyInfo', e.target.value)}
+                placeholder="This product is covered by the EU 2-year statutory warranty for conformity defects."
+              />
+              <p className="text-xs text-muted-foreground mt-1">EU requires a 2-year legal warranty on all consumer goods.</p>
+            </div>
+
+            <div className="p-3 rounded-md bg-blue-50 border border-blue-200 text-xs text-blue-700">
+              <strong>📋 EU Compliance Checklist:</strong>
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                <li>Fibre composition is required for textile products</li>
+                <li>Country of origin must be visible to customers</li>
+                <li>Responsible person details are set in Admin → Business Details → EU Compliance</li>
+                <li>Safety info appears on the product page for EU customers</li>
+                <li>2-year EU statutory warranty applies to all consumer goods</li>
+              </ul>
             </div>
           </Card>
         </TabsContent>

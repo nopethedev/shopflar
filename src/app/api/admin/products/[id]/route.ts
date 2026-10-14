@@ -71,7 +71,15 @@ export async function PATCH(req, { params }) {
         ...(body.productType != null ? { productType: body.productType } : {}),
         ...(body.downloadUrl !== undefined ? { downloadUrl: body.downloadUrl || null } : {}),
         ...(body.downloadLimit != null ? { downloadLimit: parseInt(body.downloadLimit) || 0 } : {}),
-        ...(body.codePool !== undefined ? { codePool: body.codePool } : {})
+        ...(body.codePool !== undefined ? { codePool: body.codePool } : {}),
+        // EU compliance fields
+        ...(body.fibreComposition !== undefined ? { fibreComposition: body.fibreComposition || null } : {}),
+        ...(body.countryOfOrigin !== undefined ? { countryOfOrigin: body.countryOfOrigin || null } : {}),
+        ...(body.manufacturerName !== undefined ? { manufacturerName: body.manufacturerName || null } : {}),
+        ...(body.manufacturerAddress !== undefined ? { manufacturerAddress: body.manufacturerAddress || null } : {}),
+        ...(body.safetyWarnings !== undefined ? { safetyWarnings: body.safetyWarnings || null } : {}),
+        ...(body.careInstructions !== undefined ? { careInstructions: body.careInstructions || null } : {}),
+        ...(body.warrantyInfo !== undefined ? { warrantyInfo: body.warrantyInfo || null } : {})
       }
     })
 

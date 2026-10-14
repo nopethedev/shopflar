@@ -11,7 +11,7 @@ export default async function LoginPage({ searchParams }) {
   const categories = await db.category.findMany({ where: { isVisible: true } })
 
   return (
-    <StorefrontLayout settings={settings} categories={categories}>
+    <StorefrontLayout settings={settings} categories={categories} bypassModeCheck>
       <div className="container-ecom py-12 md:py-16 max-w-md">
         <AuthForm mode="login" nextUrl={sp.next || '/account'} />
       </div>

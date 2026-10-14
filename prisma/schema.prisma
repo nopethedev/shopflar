@@ -116,6 +116,14 @@ model Product {
   downloadLimit Int      @default(0) // 0 = unlimited
   codePool      String?  // JSON array of codes for "code" type products
   codePoolDelivered String? // JSON array of codes already assigned to orders
+  // EU compliance fields (GPSR / Textile Labelling)
+  fibreComposition String?  // e.g., "100% cotton" or "80% cotton, 20% polyester"
+  countryOfOrigin String?   // e.g., "Made in Bangladesh"
+  manufacturerName String?  // manufacturer name for safety compliance
+  manufacturerAddress String? // manufacturer address
+  safetyWarnings String?   // product safety warnings (JSON array of strings)
+  careInstructions String?  // care instructions text
+  warrantyInfo String?      // warranty info (defaults to EU 2-year statutory warranty)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

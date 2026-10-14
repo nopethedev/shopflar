@@ -129,7 +129,19 @@ export async function getBusinessDetails() {
     country: await get('business_country', ''),
     phone: await get('business_phone', ''),
     email: await get('store_email', ''),
-    website: await getAppUrl()
+    website: await getAppUrl(),
+    // EU compliance fields
+    legalForm: await get('business_legal_form', ''),
+    shareCapital: await get('business_share_capital', ''),
+    representatives: await get('business_representatives', ''),
+    supervisingAuthority: await get('business_supervising_authority', ''),
+    responsiblePersonName: await get('business_responsible_person_name', ''),
+    responsiblePersonAddress: await get('business_responsible_person_address', ''),
+    responsiblePersonEmail: await get('business_responsible_person_email', ''),
+    responsiblePersonPhone: await get('business_responsible_person_phone', ''),
+    lucidNumber: await get('business_lucid_number', 'DE4139628009499'),
+    ossNumber: await get('business_oss_number', ''),
+    iosNumber: await get('business_ioss_number', '')
   }
 }
 

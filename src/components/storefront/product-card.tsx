@@ -139,7 +139,12 @@ export function ProductCard({ product, index = 0 }) {
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">${product.price.toFixed(2)}</span>
           {onSale && (
-            <span className="text-xs text-muted-foreground line-through">${product.compareAtPrice.toFixed(2)}</span>
+            <>
+              <span className="text-xs text-muted-foreground line-through">${product.compareAtPrice.toFixed(2)}</span>
+              <span className="text-[10px] text-muted-foreground" title="Lowest price in the last 30 days (EU Omnibus Directive)">
+                was ${product.compareAtPrice.toFixed(2)}
+              </span>
+            </>
           )}
         </div>
       </div>
