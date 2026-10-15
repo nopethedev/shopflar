@@ -57,8 +57,31 @@ export function AdminSystemSettings({ settings }) {
         <h3 className="font-semibold">Currency</h3>
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
-            <Label>Currency code</Label>
-            <Input value={form.currency} onChange={(e) => set('currency', e.target.value)} />
+            <Label>Currency</Label>
+            <select
+              value={form.currency}
+              onChange={(e) => {
+                const symbols = { USD: '$', EUR: '€', GBP: '£', CAD: '$', AUD: '$', JPY: '¥', CHF: 'CHF', SEK: 'kr', NOK: 'kr', DKK: 'kr', NZD: '$', INR: '₹', CNY: '¥', BRL: 'R$' }
+                set('currency', e.target.value)
+                set('currency_symbol', symbols[e.target.value] || '$')
+              }}
+              className="h-10 w-full px-3 rounded-md border border-input bg-background text-sm"
+            >
+              <option value="USD">USD — US Dollar ($)</option>
+              <option value="EUR">EUR — Euro (€)</option>
+              <option value="GBP">GBP — British Pound (£)</option>
+              <option value="CAD">CAD — Canadian Dollar ($)</option>
+              <option value="AUD">AUD — Australian Dollar ($)</option>
+              <option value="JPY">JPY — Japanese Yen (¥)</option>
+              <option value="CHF">CHF — Swiss Franc</option>
+              <option value="SEK">SEK — Swedish Krona</option>
+              <option value="NOK">NOK — Norwegian Krone</option>
+              <option value="DKK">DKK — Danish Krone</option>
+              <option value="NZD">NZD — New Zealand Dollar ($)</option>
+              <option value="INR">INR — Indian Rupee (₹)</option>
+              <option value="CNY">CNY — Chinese Yuan (¥)</option>
+              <option value="BRL">BRL — Brazilian Real (R$)</option>
+            </select>
           </div>
           <div>
             <Label>Symbol</Label>

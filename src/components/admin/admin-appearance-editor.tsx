@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/lib/toast'
 import { Save, Palette, Image as ImageIcon, Type, Layout } from 'lucide-react'
+import { FileUpload } from '@/components/shared/file-upload'
 
 export function AdminAppearanceEditor({ settings, appearance }) {
   const router = useRouter()
@@ -104,7 +105,7 @@ export function AdminAppearanceEditor({ settings, appearance }) {
             <div><Label>Contact email</Label><Input value={storeSettings.store_email} onChange={(e) => setStoreSettings({ ...storeSettings, store_email: e.target.value })} /></div>
             <div><Label>Phone</Label><Input value={storeSettings.store_phone} onChange={(e) => setStoreSettings({ ...storeSettings, store_phone: e.target.value })} /></div>
             <div><Label>Address (text)</Label><Input value={storeSettings.store_address} onChange={(e) => setStoreSettings({ ...storeSettings, store_address: e.target.value })} /></div>
-            <div><Label>Logo URL</Label><Input value={storeSettings.logo_url} onChange={(e) => setStoreSettings({ ...storeSettings, logo_url: e.target.value })} placeholder="https://..." /></div>
+            <div><Label>Logo URL</Label><FileUpload type="image" value={storeSettings.logo_url} onChange={(url) => setStoreSettings({ ...storeSettings, logo_url: url })} /></div>
             <div className="sm:col-span-2"><Label>Footer text</Label><Input value={storeSettings.footer_text} onChange={(e) => setStoreSettings({ ...storeSettings, footer_text: e.target.value })} /></div>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -121,7 +122,7 @@ export function AdminAppearanceEditor({ settings, appearance }) {
       {/* HERO */}
       <TabsContent value="hero" className="mt-4">
         <Card className="p-5 space-y-4">
-          <div><Label>Hero image URL</Label><Input value={storeSettings.hero_image} onChange={(e) => setStoreSettings({ ...storeSettings, hero_image: e.target.value })} placeholder="https://..." /></div>
+          <div><Label>Hero image</Label><FileUpload type="image" value={storeSettings.hero_image} onChange={(url) => setStoreSettings({ ...storeSettings, hero_image: url })} /></div>
           {storeSettings.hero_image && (
             <div className="aspect-[16/6] rounded-lg overflow-hidden bg-muted">
               <img src={storeSettings.hero_image} alt="Hero preview" className="h-full w-full object-cover" />
@@ -204,13 +205,50 @@ export function AdminAppearanceEditor({ settings, appearance }) {
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <Label>Body font family</Label>
-              <Input value={appearanceSettings.font_family} onChange={(e) => setAppearanceSettings({ ...appearanceSettings, font_family: e.target.value })} />
+              <select
+                value={appearanceSettings.font_family}
+                onChange={(e) => setAppearanceSettings({ ...appearanceSettings, font_family: e.target.value })}
+                className="h-10 w-full px-3 rounded-md border border-input bg-background text-sm"
+              >
+                <option value="Inter">Inter (Default)</option>
+                <option value="Roboto">Roboto</option>
+                <option value="Open Sans">Open Sans</option>
+                <option value="Lato">Lato</option>
+                <option value="Montserrat">Montserrat</option>
+                <option value="Poppins">Poppins</option>
+                <option value="Nunito">Nunito</option>
+                <option value="Source Sans Pro">Source Sans Pro</option>
+                <option value="Raleway">Raleway</option>
+                <option value="Work Sans">Work Sans</option>
+                <option value="system-ui">System UI</option>
+                <option value="Georgia">Georgia (Serif)</option>
+                <option value="Times New Roman">Times New Roman (Serif)</option>
+                <option value="Courier New">Courier New (Mono)</option>
+              </select>
             </div>
             <div>
               <Label>Heading font</Label>
-              <Input value={appearanceSettings.heading_font} onChange={(e) => setAppearanceSettings({ ...appearanceSettings, heading_font: e.target.value })} />
+              <select
+                value={appearanceSettings.heading_font}
+                onChange={(e) => setAppearanceSettings({ ...appearanceSettings, heading_font: e.target.value })}
+                className="h-10 w-full px-3 rounded-md border border-input bg-background text-sm"
+              >
+                <option value="Display">Display (Plus Jakarta Sans)</option>
+                <option value="Inter">Inter</option>
+                <option value="Roboto">Roboto</option>
+                <option value="Montserrat">Montserrat</option>
+                <option value="Poppins">Poppins</option>
+                <option value="Oswald">Oswald</option>
+                <option value="Raleway">Raleway</option>
+                <option value="Playfair Display">Playfair Display (Serif)</option>
+                <option value="Merriweather">Merriweather (Serif)</option>
+                <option value="Bebas Neue">Bebas Neue</option>
+                <option value="Anton">Anton</option>
+                <option value="system-ui">System UI</option>
+              </select>
             </div>
           </div>
+          <p className="text-xs text-muted-foreground">Fonts are loaded from Google Fonts automatically. Changes apply immediately to the storefront.</p>
           <Button onClick={saveAppearance} disabled={saving}><Save className="h-4 w-4 mr-2" /> {saving ? 'Saving...' : 'Save Typography'}</Button>
         </Card>
       </TabsContent>

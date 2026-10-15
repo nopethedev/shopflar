@@ -14,6 +14,7 @@ import { toast } from '@/lib/toast'
 import { slugify } from '@/lib/settings'
 import { Plus, Trash2, Upload, X, Save, ArrowLeft, Star, Package, Download, Ticket, Shield } from 'lucide-react'
 import Link from 'next/link'
+import { FileUpload } from '@/components/shared/file-upload'
 
 const emptyProduct = {
   name: '', slug: '', description: '', shortDescription: '',
@@ -288,9 +289,14 @@ export function ProductEditor({ product, categories }) {
             {form.productType === 'downloadable' && (
               <div className="space-y-3 pt-4 border-t border-border">
                 <div>
-                  <Label>Download URL</Label>
-                  <Input value={form.downloadUrl} onChange={(e) => set('downloadUrl', e.target.value)} placeholder="https://example.com/file.zip" className="font-mono text-sm" />
-                  <p className="text-xs text-muted-foreground mt-1">Link to the file customers will download. Use a Supabase Storage signed URL for secure downloads.</p>
+                  <Label>Download File</Label>
+                  <FileUpload
+                    type="file"
+                    value={form.downloadUrl}
+                    onChange={(url) => set('downloadUrl', url)}
+                    placeholder="https://example.com/file.zip"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Upload a file or paste a URL. Customers receive this link by email after purchase.</p>
                 </div>
                 <div>
                   <Label>Download Limit (0 = unlimited)</Label>
@@ -342,12 +348,18 @@ export function ProductEditor({ product, categories }) {
         <TabsContent value="images" className="mt-4">
           <Card className="p-5 space-y-4">
             <div>
-              <Label>Add image by URL</Label>
-              <div className="flex gap-2">
-                <Input value={newImageUrl} onChange={(e) => setNewImageUrl(e.target.value)} placeholder="https://..." />
-                <Button onClick={addImage} type="button"><Plus className="h-4 w-4 mr-1" /> Add</Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">In production, images upload to Supabase Storage. For demo, paste a URL.</p>
+              <Label>Upload image or paste URL</Label>
+              <FileUpload
+                type="image"
+                accept="image/*"
+                value=""
+                onChange={(url) => {
+                  if (url) {
+                    setForm(f => ({ ...f, images: [...f.images, { url, sortOrder: f.images.length, isNew: true, id: `new_${Date.now()}` }] }))
+                    toast.success('Image added')
+                  }
+                }}
+              />
             </div>
 
             <div>

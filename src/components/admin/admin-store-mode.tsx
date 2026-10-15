@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/lib/toast'
 import { Wrench, Rocket, TrendingUp, AlertTriangle, Save, Lock } from 'lucide-react'
+import { FileUpload } from '@/components/shared/file-upload'
 
 export function AdminStoreMode({ settings, storeMode, saleLimit }) {
   const router = useRouter()
@@ -115,7 +116,7 @@ export function AdminStoreMode({ settings, storeMode, saleLimit }) {
               </div>
               <div>
                 <Label className="text-xs">Background Image URL (optional)</Label>
-                <Input value={maintenance.maintenance_image} onChange={(e) => setMaintenanceField('maintenance_image', e.target.value)} placeholder="https://..." />
+                <FileUpload type="image" value={maintenance.maintenance_image} onChange={(url) => setMaintenanceField('maintenance_image', url)} />
               </div>
               <div className="p-3 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-700 flex items-start gap-2">
                 <Lock className="h-4 w-4 mt-0.5 shrink-0" />
@@ -177,7 +178,7 @@ export function AdminStoreMode({ settings, storeMode, saleLimit }) {
               </div>
               <div>
                 <Label className="text-xs">Background Image URL (optional)</Label>
-                <Input value={prelaunch.prelaunch_image} onChange={(e) => setPrelaunchField('prelaunch_image', e.target.value)} placeholder="https://..." />
+                <FileUpload type="image" value={prelaunch.prelaunch_image} onChange={(url) => setPrelaunchField('prelaunch_image', url)} />
               </div>
               <div className="p-3 rounded-md bg-blue-50 border border-blue-200 text-xs text-blue-700 flex items-start gap-2">
                 <Rocket className="h-4 w-4 mt-0.5 shrink-0" />
