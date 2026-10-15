@@ -1,5 +1,6 @@
 // Email sending helper — uses nodemailer with SMTP credentials stored in DB
 // Falls back gracefully if SMTP is not configured (logs to console in dev)
+// All errors are caught and logged — email failures never break the main flow
 
 import nodemailer from 'nodemailer'
 import { db } from './db'
@@ -34,11 +35,73 @@ async function getSmtpConfig() {
   }
 
   transporterCache = {
-    transporter: nodemailer.createTransport({ host, port, secure, auth: { user, pass } }),
+    transporter: nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      // Gmail and some providers need this
+      tls: { rejectUnauthorized: true }
+    }),
     fromEmail,
     fromName
   }
   return transporterCache
+}
+
+// Truncate text to avoid SQLite column overflow
+function truncateForLog(text, maxLen = 5000) {
+  if (!text) return ''
+  if (text.length <= maxLen) return text
+  return text.slice(0, maxLen) + '...[truncated]'
+}
+
+// Format SMTP errors with helpful messages
+function formatSmtpError(error) {
+  const msg = error.message || String(error)
+  const code = error.code || error.responseCode || ''
+
+  // Gmail auth failure
+  if (msg.includes('535') || msg.includes('Invalid login') || msg.includes('authentication failed')) {
+    return {
+      message: 'SMTP authentication failed. If using Gmail, you need an App Password (not your regular password). Generate one at https://myaccount.google.com/apppasswords',
+      code: 'AUTH_FAILED'
+    }
+  }
+
+  // Connection refused
+  if (msg.includes('EAUTH') || msg.includes('EENVELOPE')) {
+    return {
+      message: `SMTP authentication error: ${msg}. Check your username and password in Admin → Email & SMTP.`,
+      code: 'AUTH_ERROR'
+    }
+  }
+
+  if (msg.includes('ECONNECTION') || msg.includes('connect ECONNREFUSED')) {
+    return {
+      message: `Could not connect to SMTP server. Check host and port in Admin → Email & SMTP. Error: ${msg}`,
+      code: 'CONN_REFUSED'
+    }
+  }
+
+  if (msg.includes('ETIMEDOUT')) {
+    return {
+      message: `SMTP connection timed out. Check your network and firewall settings. Error: ${msg}`,
+      code: 'TIMEOUT'
+    }
+  }
+
+  if (msg.includes('ESSL') || msg.includes('SSL')) {
+    return {
+      message: `SSL/TLS error. Try toggling the "Use SSL/TLS" setting in Admin → Email & SMTP. Error: ${msg}`,
+      code: 'SSL_ERROR'
+    }
+  }
+
+  return {
+    message: msg,
+    code: code || 'UNKNOWN'
+  }
 }
 
 export async function sendEmail({ to, subject, html, text }) {
@@ -47,12 +110,12 @@ export async function sendEmail({ to, subject, html, text }) {
   if (!config) {
     // Log to console instead of failing — useful in dev
     console.log(`[EMAIL] (SMTP not configured) To: ${to} | Subject: ${subject}`)
-    console.log(`[EMAIL] Body: ${text || html?.replace(/<[^>]+>/g, '').slice(0, 200)}`)
+    console.log(`[EMAIL] Body: ${(text || html?.replace(/<[^>]+>/g, '') || '').slice(0, 200)}`)
 
-    // Log to DB
+    // Log to DB (truncated to avoid column overflow)
     await db.emailLog.create({
-      data: { to, subject, body: html || text || '', status: 'failed', error: 'SMTP not configured' }
-    }).catch(() => {})
+      data: { to, subject: truncateForLog(subject), body: truncateForLog(html || text || ''), status: 'failed', error: 'SMTP not configured' }
+    }).catch((e) => console.error('[EMAIL] Failed to log:', e.message))
 
     return { success: false, error: 'SMTP not configured' }
   }
@@ -66,19 +129,28 @@ export async function sendEmail({ to, subject, html, text }) {
       text: text || html?.replace(/<[^>]+>/g, '')
     })
 
+    // Log to DB (truncated)
     await db.emailLog.create({
-      data: { to, subject, body: html || text || '', status: 'sent' }
-    }).catch(() => {})
+      data: { to, subject: truncateForLog(subject), body: truncateForLog(html || text || ''), status: 'sent' }
+    }).catch((e) => console.error('[EMAIL] Failed to log success:', e.message))
 
     return { success: true, messageId: info.messageId }
   } catch (e) {
-    console.error('[EMAIL] Send failed:', e.message)
+    const errorInfo = formatSmtpError(e)
+    console.error('[EMAIL] Send failed:', errorInfo.message)
 
+    // Log to DB (truncated, with helpful error message)
     await db.emailLog.create({
-      data: { to, subject, body: html || text || '', status: 'failed', error: e.message }
-    }).catch(() => {})
+      data: {
+        to,
+        subject: truncateForLog(subject),
+        body: truncateForLog(html || text || ''),
+        status: 'failed',
+        error: truncateForLog(errorInfo.message, 500)
+      }
+    }).catch((e2) => console.error('[EMAIL] Failed to log error:', e2.message))
 
-    return { success: false, error: e.message }
+    return { success: false, error: errorInfo.message }
   }
 }
 
