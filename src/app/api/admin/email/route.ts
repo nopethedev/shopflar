@@ -4,7 +4,7 @@ import { requireAdmin } from '@/lib/auth'
 
 const ALLOWED_KEYS = new Set([
   'smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass',
-  'smtp_from_email', 'smtp_from_name', 'smtp_secure',
+  'smtp_from_email', 'smtp_from_name', 'smtp_secure', 'smtp_security',
   'newsletter_welcome_enabled', 'newsletter_welcome_discount_percent',
   'newsletter_welcome_code_prefix',
   'newsletter_prompt_title', 'newsletter_prompt_subtitle'

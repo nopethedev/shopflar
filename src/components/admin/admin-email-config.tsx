@@ -23,7 +23,9 @@ export function AdminEmailConfig({ settings, welcome, configured }) {
     smtp_pass: settings.smtp_pass || '',
     smtp_from_email: settings.smtp_from_email || '',
     smtp_from_name: settings.smtp_from_name || '',
-    smtp_secure: settings.smtp_secure === 'true'
+    // Security mode: 'none' | 'ssl' | 'tls'
+    // Backward compat: if old smtp_secure was 'true', default to 'ssl', otherwise 'tls'
+    smtp_security: settings.smtp_security || (settings.smtp_secure === 'true' ? 'ssl' : 'tls')
   })
   const [welcomeConfig, setWelcomeConfig] = useState({
     newsletter_welcome_enabled: welcome.newsletter_welcome_enabled === 'true',
@@ -42,7 +44,7 @@ export function AdminEmailConfig({ settings, welcome, configured }) {
       const r = await fetch('/api/admin/email', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...smtp, smtp_secure: smtp.smtp_secure ? 'true' : 'false' })
+        body: JSON.stringify(smtp)
       })
       if (r.ok) { toast.success('Saved', 'SMTP settings updated'); router.refresh() }
       else throw new Error('Failed')
@@ -112,9 +114,22 @@ export function AdminEmailConfig({ settings, welcome, configured }) {
               <Label className="text-xs">Port</Label>
               <Input value={smtp.smtp_port} onChange={(e) => setSmtpField('smtp_port', e.target.value)} placeholder="587" />
             </div>
-            <div className="flex items-end justify-between pb-2">
-              <Label className="text-xs">Use SSL/TLS</Label>
-              <Switch checked={smtp.smtp_secure} onCheckedChange={(v) => setSmtpField('smtp_secure', v)} />
+            <div>
+              <Label className="text-xs">Security</Label>
+              <select
+                value={smtp.smtp_security}
+                onChange={(e) => setSmtpField('smtp_security', e.target.value)}
+                className="h-10 w-full px-3 rounded-md border border-input bg-background text-sm"
+              >
+                <option value="tls">TLS (STARTTLS — port 587, recommended)</option>
+                <option value="ssl">SSL (implicit TLS — port 465)</option>
+                <option value="none">None (plain — port 25, not recommended)</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {smtp.smtp_security === 'tls' && 'Connection starts plain, then upgrades to TLS. Use port 587. Most providers support this.'}
+                {smtp.smtp_security === 'ssl' && 'Connection is encrypted from the start. Use port 465.'}
+                {smtp.smtp_security === 'none' && '⚠️ Plain connection with no encryption. Only use for local dev or trusted networks.'}
+              </p>
             </div>
             <div>
               <Label className="text-xs">Username</Label>
@@ -156,12 +171,14 @@ export function AdminEmailConfig({ settings, welcome, configured }) {
         <Card className="p-5 bg-muted/30">
           <h3 className="font-semibold mb-2">Common SMTP providers</h3>
           <div className="text-xs text-muted-foreground space-y-1">
-            <p><strong>Gmail:</strong> smtp.gmail.com:587 (use App Password, not your regular password)</p>
-            <p><strong>Outlook/Hotmail:</strong> smtp.office365.com:587</p>
-            <p><strong>Yahoo:</strong> smtp.mail.yahoo.com:587</p>
-            <p><strong>SendGrid:</strong> smtp.sendgrid.net:587 (user: apikey, pass: your API key)</p>
-            <p><strong>Mailgun:</strong> smtp.mailgun.org:587</p>
-            <p><strong>Amazon SES:</strong> email-smtp.[region].amazonaws.com:587</p>
+            <p><strong>Gmail:</strong> smtp.gmail.com:587, TLS (use App Password, not your regular password)</p>
+            <p><strong>Outlook/Hotmail:</strong> smtp.office365.com:587, TLS</p>
+            <p><strong>Yahoo:</strong> smtp.mail.yahoo.com:587, TLS</p>
+            <p><strong>SendGrid:</strong> smtp.sendgrid.net:587, TLS (user: apikey, pass: your API key)</p>
+            <p><strong>Mailgun:</strong> smtp.mailgun.org:587, TLS</p>
+            <p><strong>Amazon SES:</strong> email-smtp.[region].amazonaws.com:587, TLS</p>
+            <p><strong>Zoho:</strong> smtp.zoho.com:465, SSL (or :587 with TLS)</p>
+            <p><strong>ProtonMail:</strong> smtp.protonmail.com:587, TLS (requires Bridge)</p>
           </div>
         </Card>
       </TabsContent>

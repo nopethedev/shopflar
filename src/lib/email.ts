@@ -9,6 +9,10 @@ let transporterCache = null
 let lastConfigCheck = 0
 const CACHE_TTL = 30000 // 30 seconds
 
+// Connection security modes:
+//   'none'  → plain connection (port 25, no encryption — not recommended)
+//   'ssl'   → implicit TLS (port 465 typically)
+//   'tls'   → STARTTLS upgrade (port 587 typically — most common)
 async function getSmtpConfig() {
   const now = Date.now()
   if (now - lastConfigCheck > CACHE_TTL) {
@@ -28,23 +32,40 @@ async function getSmtpConfig() {
   const pass = map.get('smtp_pass')
   const fromEmail = map.get('smtp_from_email') || user
   const fromName = map.get('smtp_from_name') || 'Shopflar'
-  const secure = map.get('smtp_secure') === 'true'
+  // Security mode: 'none' | 'ssl' | 'tls'
+  // Backward compat: if old 'smtp_secure' is set to 'true', treat as 'ssl'
+  const securityMode = map.get('smtp_security') || (map.get('smtp_secure') === 'true' ? 'ssl' : 'tls')
 
   if (!host || !user || !pass) {
     return null
   }
 
+  // Configure transporter based on security mode
+  let transportConfig = {
+    host,
+    port,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: true }
+  }
+
+  if (securityMode === 'ssl') {
+    // Implicit TLS — entire connection is encrypted from the start (port 465)
+    transportConfig.secure = true
+  } else if (securityMode === 'tls') {
+    // STARTTLS — connection starts plain, then upgrades to TLS (port 587)
+    transportConfig.secure = false
+    transportConfig.requireTLS = true
+  } else {
+    // None — plain connection (port 25, insecure)
+    transportConfig.secure = false
+    transportConfig.tls = { rejectUnauthorized: false }
+  }
+
   transporterCache = {
-    transporter: nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: { user, pass },
-      // Gmail and some providers need this
-      tls: { rejectUnauthorized: true }
-    }),
+    transporter: nodemailer.createTransport(transportConfig),
     fromEmail,
-    fromName
+    fromName,
+    securityMode
   }
   return transporterCache
 }
@@ -79,22 +100,29 @@ function formatSmtpError(error) {
 
   if (msg.includes('ECONNECTION') || msg.includes('connect ECONNREFUSED')) {
     return {
-      message: `Could not connect to SMTP server. Check host and port in Admin → Email & SMTP. Error: ${msg}`,
+      message: `Could not connect to SMTP server. Check host, port, and security mode (TLS/SSL/None) in Admin → Email & SMTP. Error: ${msg}`,
       code: 'CONN_REFUSED'
     }
   }
 
   if (msg.includes('ETIMEDOUT')) {
     return {
-      message: `SMTP connection timed out. Check your network and firewall settings. Error: ${msg}`,
+      message: `SMTP connection timed out. Check your network and firewall settings. If using SSL (port 465), make sure the Security dropdown is set to "SSL". If using TLS (port 587), make sure it's set to "TLS". Error: ${msg}`,
       code: 'TIMEOUT'
     }
   }
 
-  if (msg.includes('ESSL') || msg.includes('SSL')) {
+  if (msg.includes('ESSL') || msg.includes('SSL') || msg.includes('wrong version number') || msg.includes('protocol error')) {
     return {
-      message: `SSL/TLS error. Try toggling the "Use SSL/TLS" setting in Admin → Email & SMTP. Error: ${msg}`,
+      message: `SSL/TLS handshake failed — your security mode doesn't match the port. Try switching between "TLS" (port 587) and "SSL" (port 465) in Admin → Email & SMTP. Error: ${msg}`,
       code: 'SSL_ERROR'
+    }
+  }
+
+  if (msg.includes('UNABLE_TO_VERIFY') || msg.includes('self-signed') || msg.includes('certificate')) {
+    return {
+      message: `SSL certificate verification failed. This can happen with self-signed certificates or antivirus software intercepting your connection. Error: ${msg}`,
+      code: 'CERT_ERROR'
     }
   }
 
