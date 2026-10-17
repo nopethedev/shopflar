@@ -1,0 +1,622 @@
+     1→     1→'use client'
+     2→     2→import { useState, useRef } from 'react'
+     3→     3→import { useRouter } from 'next/navigation'
+     4→     4→import { Card } from '@/components/ui/card'
+     5→     5→import { Button } from '@/components/ui/button'
+     6→     6→import { Input } from '@/components/ui/input'
+     7→     7→import { Label } from '@/components/ui/label'
+     8→     8→import { Textarea } from '@/components/ui/textarea'
+     9→     9→import { Switch } from '@/components/ui/switch'
+    10→    10→import { Badge } from '@/components/ui/badge'
+    11→    11→import {
+    12→    12→  Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle
+    13→    13→} from '@/components/ui/dialog'
+    14→    14→import { toast } from '@/lib/toast'
+    15→    15→import { FileUpload } from '@/components/shared/file-upload'
+    16→    16→import {
+    17→    17→  Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Save,
+    18→    18→  Image as ImageIcon, Type, Mail, Gift, Layout, Scroll, Grid3x3, Code,
+    19→    19→  GripVertical, Monitor, Smartphone, X, Settings2, Copy
+    20→    20→} from 'lucide-react'
+    21→    21→
+    22→    22→const SECTION_TYPES = [
+    23→    23→  { type: 'hero', label: 'Hero Banner', icon: Layout, description: 'Large image with title, subtitle, and CTA button' },
+    24→    24→  { type: 'product-grid', label: 'Product Grid', icon: Grid3x3, description: 'Show featured, new, or filtered products' },
+    25→    25→  { type: 'marquee', label: 'Marquee', icon: Scroll, description: 'Scrolling text banner — great for announcements' },
+    26→    26→  { type: 'text', label: 'Text Block', icon: Type, description: 'Heading + paragraph of custom text' },
+    27→    27→  { type: 'image', label: 'Image', icon: ImageIcon, description: 'Single image with optional link' },
+    28→    28→  { type: 'newsletter', label: 'Newsletter Signup', icon: Mail, description: 'Email subscribe form with prompt text' },
+    29→    29→  { type: 'discounts', label: 'Discount Codes', icon: Gift, description: 'Show active discount codes customers can copy' },
+    30→    30→  { type: 'custom-html', label: 'Custom HTML', icon: Code, description: 'Raw HTML code block' }
+    31→    31→]
+    32→    32→
+    33→    33→export function PageBuilder({ initialSections, categories }) {
+    34→    34→  const router = useRouter()
+    35→    35→  const [sections, setSections] = useState(initialSections)
+    36→    36→  const [adding, setAdding] = useState(false)
+    37→    37→  const [saving, setSaving] = useState(null)
+    38→    38→  const [selectedSection, setSelectedSection] = useState(null)  // section id for side panel
+    39→    39→  const [previewDevice, setPreviewDevice] = useState('desktop')  // desktop | mobile
+    40→    40→  const [draggedId, setDraggedId] = useState(null)
+    41→    41→  const [dragOverId, setDragOverId] = useState(null)
+    42→    42→
+    43→    43→  const addSection = async (type) => {
+    44→    44→    const newSection = {
+    45→    45→      type,
+    46→    46→      config: defaultConfig(type),
+    47→    47→      sortOrder: sections.length,
+    48→    48→      isVisible: true
+    49→    49→    }
+    50→    50→    try {
+    51→    51→      const r = await fetch('/api/admin/sections', {
+    52→    52→        method: 'POST',
+    53→    53→        headers: { 'Content-Type': 'application/json' },
+    54→    54→        body: JSON.stringify({ pageType: 'home', ...newSection })
+    55→    55→      })
+    56→    56→      if (r.ok) {
+    57→    57→        const d = await r.json()
+    58→    58→        const newSec = { ...d.section, config: JSON.parse(d.section.config) }
+    59→    59→        setSections([...sections, newSec])
+    60→    60→        toast.success('Section added')
+    61→    61→        setAdding(false)
+    62→    62→        setSelectedSection(newSec.id)
+    63→    63→        router.refresh()
+    64→    64→      } else {
+    65→    65→        throw new Error('Failed')
+    66→    66→      }
+    67→    67→    } catch (e) {
+    68→    68→      toast.error('Failed', e.message)
+    69→    69→    }
+    70→    70→  }
+    71→    71→
+    72→    72→  const updateSection = (id, config) => {
+    73→    73→    setSections(sections.map(s => s.id === id ? { ...s, config } : s))
+    74→    74→  }
+    75→    75→
+    76→    76→  const saveSection = async (id) => {
+    77→    77→    setSaving(id)
+    78→    78→    const section = sections.find(s => s.id === id)
+    79→    79→    try {
+    80→    80→      const r = await fetch(`/api/admin/sections/${id}`, {
+    81→    81→        method: 'PATCH',
+    82→    82→        headers: { 'Content-Type': 'application/json' },
+    83→    83→        body: JSON.stringify({
+    84→    84→          config: JSON.stringify(section.config),
+    85→    85→          isVisible: section.isVisible
+    86→    86→        })
+    87→    87→      })
+    88→    88→      if (r.ok) {
+    89→    89→        toast.success('Saved')
+    90→    90→        router.refresh()
+    91→    91→      }
+    92→    92→    } catch (e) {
+    93→    93→      toast.error('Failed', e.message)
+    94→    94→    } finally {
+    95→    95→      setSaving(null)
+    96→    96→    }
+    97→    97→  }
+    98→    98→
+    99→    99→  const toggleVisible = async (id) => {
+   100→   100→    const section = sections.find(s => s.id === id)
+   101→   101→    const updated = { ...section, isVisible: !section.isVisible }
+   102→   102→    setSections(sections.map(s => s.id === id ? updated : s))
+   103→   103→    await saveSection(id)
+   104→   104→  }
+   105→   105→
+   106→   106→  const duplicateSection = async (id) => {
+   107→   107→    const section = sections.find(s => s.id === id)
+   108→   108→    if (!section) return
+   109→   109→    try {
+   110→   110→      const r = await fetch('/api/admin/sections', {
+   111→   111→        method: 'POST',
+   112→   112→        headers: { 'Content-Type': 'application/json' },
+   113→   113→        body: JSON.stringify({
+   114→   114→          pageType: 'home',
+   115→   115→          sectionType: section.sectionType,
+   116→   116→          config: JSON.stringify(section.config),
+   117→   117→          sortOrder: sections.length,
+   118→   118→          isVisible: true
+   119→   119→        })
+   120→   120→      })
+   121→   121→      if (r.ok) {
+   122→   122→        const d = await r.json()
+   123→   123→        const newSec = { ...d.section, config: JSON.parse(d.section.config) }
+   124→   124→        setSections([...sections, newSec])
+   125→   125→        toast.success('Section duplicated')
+   126→   126→        router.refresh()
+   127→   127→      }
+   128→   128→    } catch (e) {
+   129→   129→      toast.error('Failed', e.message)
+   130→   130→    }
+   131→   131→  }
+   132→   132→
+   133→   133→  const moveSection = (id, direction) => {
+   134→   134→    const idx = sections.findIndex(s => s.id === id)
+   135→   135→    const newIdx = direction === 'up' ? idx - 1 : idx + 1
+   136→   136→    if (newIdx < 0 || newIdx >= sections.length) return
+   137→   137→    const reordered = [...sections]
+   138→   138→    const [moved] = reordered.splice(idx, 1)
+   139→   139→    reordered.splice(newIdx, 0, moved)
+   140→   140→    const withOrders = reordered.map((s, i) => ({ ...s, sortOrder: i }))
+   141→   141→    setSections(withOrders)
+   142→   142→    // Persist all sort orders
+   143→   143→    Promise.all(withOrders.map(s =>
+   144→   144→      fetch(`/api/admin/sections/${s.id}`, {
+   145→   145→        method: 'PATCH',
+   146→   146→        headers: { 'Content-Type': 'application/json' },
+   147→   147→        body: JSON.stringify({ sortOrder: s.sortOrder })
+   148→   148→      })
+   149→   149→    )).then(() => {
+   150→   150→      toast.success('Reordered')
+   151→   151→      router.refresh()
+   152→   152→    })
+   153→   153→  }
+   154→   154→
+   155→   155→  // Drag and drop
+   156→   156→  const handleDragStart = (e, id) => {
+   157→   157→    setDraggedId(id)
+   158→   158→    e.dataTransfer.effectAllowed = 'move'
+   159→   159→  }
+   160→   160→
+   161→   161→  const handleDragOver = (e, id) => {
+   162→   162→    e.preventDefault()
+   163→   163→    e.dataTransfer.dropEffect = 'move'
+   164→   164→    if (id !== draggedId) setDragOverId(id)
+   165→   165→  }
+   166→   166→
+   167→   167→  const handleDrop = (e, targetId) => {
+   168→   168→    e.preventDefault()
+   169→   169→    if (!draggedId || draggedId === targetId) return
+   170→   170→    const draggedIdx = sections.findIndex(s => s.id === draggedId)
+   171→   171→    const targetIdx = sections.findIndex(s => s.id === targetId)
+   172→   172→    if (draggedIdx === -1 || targetIdx === -1) return
+   173→   173→    const reordered = [...sections]
+   174→   174→    const [moved] = reordered.splice(draggedIdx, 1)
+   175→   175→    reordered.splice(targetIdx, 0, moved)
+   176→   176→    const withOrders = reordered.map((s, i) => ({ ...s, sortOrder: i }))
+   177→   177→    setSections(withOrders)
+   178→   178→    setDraggedId(null)
+   179→   179→    setDragOverId(null)
+   180→   180→    // Persist
+   181→   181→    Promise.all(withOrders.map(s =>
+   182→   182→      fetch(`/api/admin/sections/${s.id}`, {
+   183→   183→        method: 'PATCH',
+   184→   184→        headers: { 'Content-Type': 'application/json' },
+   185→   185→        body: JSON.stringify({ sortOrder: s.sortOrder })
+   186→   186→      })
+   187→   187→    )).then(() => {
+   188→   188→      toast.success('Reordered')
+   189→   189→      router.refresh()
+   190→   190→    })
+   191→   191→  }
+   192→   192→
+   193→   193→  const delSection = async (id) => {
+   194→   194→    if (!confirm('Delete this section?')) return
+   195→   195→    const r = await fetch(`/api/admin/sections/${id}`, { method: 'DELETE' })
+   196→   196→    if (r.ok) {
+   197→   197→      setSections(sections.filter(s => s.id !== id))
+   198→   198→      if (selectedSection === id) setSelectedSection(null)
+   199→   199→      toast.success('Deleted')
+   200→   200→      router.refresh()
+   201→   201→    }
+   202→   202→  }
+   203→   203→
+   204→   204→  const selectedSectionData = sections.find(s => s.id === selectedSection)
+   205→   205→
+   206→   206→  return (
+   207→   207→    <div className="flex gap-6">
+   208→   208→      {/* ===== Left: Section list + preview ===== */}
+   209→   209→      <div className="flex-1 min-w-0 space-y-4">
+   210→   210→        {/* Toolbar */}
+   211→   211→        <div className="flex items-center justify-between gap-3">
+   212→   212→          <div className="flex items-center gap-2">
+   213→   213→            <div className="inline-flex rounded-md border border-border overflow-hidden">
+   214→   214→              <button
+   215→   215→                onClick={() => setPreviewDevice('desktop')}
+   216→   216→                className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 ${previewDevice === 'desktop' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}
+   217→   217→              >
+   218→   218→                <Monitor className="h-3.5 w-3.5" /> Desktop
+   219→   219→              </button>
+   220→   220→              <button
+   221→   221→                onClick={() => setPreviewDevice('mobile')}
+   222→   222→                className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 ${previewDevice === 'mobile' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}
+   223→   223→              >
+   224→   224→                <Smartphone className="h-3.5 w-3.5" /> Mobile
+   225→   225→              </button>
+   226→   226→            </div>
+   227→   227→          </div>
+   228→   228→          <Dialog open={adding} onOpenChange={setAdding}>
+   229→   229→            <DialogTrigger asChild>
+   230→   230→              <Button size="sm">
+   231→   231→                <Plus className="h-4 w-4 mr-1.5" /> Add Section
+   232→   232→              </Button>
+   233→   233→            </DialogTrigger>
+   234→   234→            <DialogContent className="max-w-2xl">
+   235→   235→              <DialogHeader>
+   236→   236→                <DialogTitle>Add a section</DialogTitle>
+   237→   237→              </DialogHeader>
+   238→   238→              <div className="grid sm:grid-cols-2 gap-2">
+   239→   239→                {SECTION_TYPES.map(t => (
+   240→   240→                  <button
+   241→   241→                    key={t.type}
+   242→   242→                    onClick={() => addSection(t.type)}
+   243→   243→                    className="text-left p-4 rounded-md border border-border hover:border-foreground/40 hover:bg-muted/30 transition-colors group"
+   244→   244→                  >
+   245→   245→                    <div className="flex items-start gap-3">
+   246→   246→                      <div className="h-9 w-9 rounded-lg bg-muted group-hover:bg-foreground group-hover:text-background flex items-center justify-center transition-colors">
+   247→   247→                        <t.icon className="h-4 w-4" />
+   248→   248→                      </div>
+   249→   249→                      <div>
+   250→   250→                        <p className="text-sm font-medium">{t.label}</p>
+   251→   251→                        <p className="text-xs text-muted-foreground mt-0.5">{t.description}</p>
+   252→   252→                      </div>
+   253→   253→                    </div>
+   254→   254→                  </button>
+   255→   255→                ))}
+   256→   256→              </div>
+   257→   257→            </DialogContent>
+   258→   258→          </Dialog>
+   259→   259→        </div>
+   260→   260→
+   261→   261→        {/* Preview canvas */}
+   262→   262→        <div className={`mx-auto transition-all ${previewDevice === 'mobile' ? 'max-w-[375px]' : 'max-w-full'}`}>
+   263→   263→          <div className="rounded-xl border-2 border-dashed border-border overflow-hidden bg-background">
+   264→   264→            {sections.length === 0 ? (
+   265→   265→              <div className="p-16 text-center">
+   266→   266→                <Layout className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
+   267→   267→                <h3 className="font-semibold">Your page is empty</h3>
+   268→   268→                <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+   269→   269→                  Add sections to build your home page. Drag to reorder, click to edit.
+   270→   270→                </p>
+   271→   271→                <Button onClick={() => setAdding(true)} className="mt-4">
+   272→   272→                  <Plus className="h-4 w-4 mr-2" /> Add your first section
+   273→   273→                </Button>
+   274→   274→              </div>
+   275→   275→            ) : (
+   276→   276→              <div className="divide-y divide-border">
+   277→   277→                {sections.map((section, idx) => {
+   278→   278→                  const sectionType = SECTION_TYPES.find(t => t.type === section.sectionType)
+   279→   279→                  const Icon = sectionType?.icon || Code
+   280→   280→                  const isSelected = selectedSection === section.id
+   281→   281→                  const isDragOver = dragOverId === section.id
+   282→   282→                  return (
+   283→   283→                    <div
+   284→   284→                      key={section.id}
+   285→   285→                      draggable
+   286→   286→                      onDragStart={(e) => handleDragStart(e, section.id)}
+   287→   287→                      onDragOver={(e) => handleDragOver(e, section.id)}
+   288→   288→                      onDrop={(e) => handleDrop(e, section.id)}
+   289→   289→                      onDragEnd={() => { setDraggedId(null); setDragOverId(null) }}
+   290→   290→                      className={`relative group transition-all ${
+   291→   291→                        isSelected ? 'ring-2 ring-foreground ring-inset' : ''
+   292→   292→                      } ${
+   293→   293→                        isDragOver ? 'border-t-4 border-t-foreground' : ''
+   294→   294→                      } ${
+   295→   295→                        !section.isVisible ? 'opacity-50' : ''
+   296→   296→                      }`}
+   297→   297→                    >
+   298→   298→                      {/* Section header bar */}
+   299→   299→                      <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b border-border">
+   300→   300→                        <div className="flex items-center gap-2">
+   301→   301→                          <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing" />
+   302→   302→                          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+   303→   303→                          <span className="text-xs font-medium">{sectionType?.label || section.sectionType}</span>
+   304→   304→                          {!section.isVisible && <Badge variant="secondary" className="text-[10px]">Hidden</Badge>}
+   305→   305→                        </div>
+   306→   306→                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+   307→   307→                          <button onClick={() => moveSection(section.id, 'up')} disabled={idx === 0} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Move up">
+   308→   308→                            <ArrowUp className="h-3.5 w-3.5" />
+   309→   309→                          </button>
+   310→   310→                          <button onClick={() => moveSection(section.id, 'down')} disabled={idx === sections.length - 1} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Move down">
+   311→   311→                            <ArrowDown className="h-3.5 w-3.5" />
+   312→   312→                          </button>
+   313→   313→                          <button onClick={() => duplicateSection(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground" aria-label="Duplicate">
+   314→   314→                            <Copy className="h-3.5 w-3.5" />
+   315→   315→                          </button>
+   316→   316→                          <button onClick={() => toggleVisible(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground" aria-label="Toggle visibility">
+   317→   317→                            {section.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+   318→   318→                          </button>
+   319→   319→                          <button onClick={() => delSection(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-destructive" aria-label="Delete">
+   320→   320→                            <Trash2 className="h-3.5 w-3.5" />
+   321→   321→                          </button>
+   322→   322→                        </div>
+   323→   323→                      </div>
+   324→   324→
+   325→   325→                      {/* Live preview */}
+   326→   326→                      <div
+   327→   327→                        className="cursor-pointer"
+   328→   328→                        onClick={() => setSelectedSection(section.id)}
+   329→   329→                      >
+   330→   330→                        <SectionPreview section={section} />
+   331→   331→                      </div>
+   332→   332→                    </div>
+   333→   333→                  )
+   334→   334→                })}
+   335→   335→              </div>
+   336→   336→            )}
+   337→   337→          </div>
+   338→   338→        </div>
+   339→   339→
+   340→   340→        <p className="text-xs text-muted-foreground text-center">
+   341→   341→          💡 Drag sections to reorder · Click a section to edit its content · Use the eye icon to hide temporarily
+   342→   342→        </p>
+   343→   343→      </div>
+   344→   344→
+   345→   345→      {/* ===== Right: Side panel for editing selected section ===== */}
+   346→   346→      {selectedSectionData && (
+   347→   347→        <div className="w-80 shrink-0">
+   348→   348→          <div className="sticky top-24">
+   349→   349→            <Card className="p-0">
+   350→   350→              {/* Panel header */}
+   351→   351→              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+   352→   352→                <div className="flex items-center gap-2">
+   353→   353→                  <Settings2 className="h-4 w-4" />
+   354→   354→                  <h3 className="text-sm font-semibold">Edit Section</h3>
+   355→   355→                </div>
+   356→   356→                <button onClick={() => setSelectedSection(null)} className="text-muted-foreground hover:text-foreground">
+   357→   357→                  <X className="h-4 w-4" />
+   358→   358→                </button>
+   359→   359→              </div>
+   360→   360→
+   361→   361→              {/* Panel content */}
+   362→   362→              <div className="p-4 max-h-[60vh] overflow-y-auto">
+   363→   363→                <SectionConfigEditor
+   364→   364→                  section={selectedSectionData}
+   365→   365→                  categories={categories}
+   366→   366→                  onUpdate={(config) => updateSection(selectedSectionData.id, config)}
+   367→   367→                />
+   368→   368→              </div>
+   369→   369→
+   370→   370→              {/* Panel footer */}
+   371→   371→              <div className="px-4 py-3 border-t border-border flex gap-2">
+   372→   372→                <Button
+   373→   373→                  size="sm"
+   374→   374→                  className="flex-1"
+   375→   375→                  onClick={() => saveSection(selectedSectionData.id)}
+   376→   376→                  disabled={saving === selectedSectionData.id}
+   377→   377→                >
+   378→   378→                  <Save className="h-3.5 w-3.5 mr-1" />
+   379→   379→                  {saving === selectedSectionData.id ? 'Saving...' : 'Save'}
+   380→   380→                </Button>
+   381→   381→              </div>
+   382→   382→            </Card>
+   383→   383→          </div>
+   384→   384→        </div>
+   385→   385→      )}
+   386→   386→    </div>
+   387→   387→  )
+   388→   388→}
+   389→   389→
+   390→   390→// ============ Preview components (mini live render) ============
+   391→   391→function SectionPreview({ section }) {
+   392→   392→  const config = typeof section.config === 'string' ? JSON.parse(section.config) : section.config
+   393→   393→
+   394→   394→  switch (section.sectionType) {
+   395→   395→    case 'hero':
+   396→   396→      return (
+   397→   397→        <div className="relative h-32 bg-gradient-to-br from-muted to-muted/60 overflow-hidden">
+   398→   398→          {config.image && <img src={config.image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />}
+   399→   399→          <div className="absolute inset-0 flex items-center justify-center text-center p-4">
+   400→   400→            <div>
+   401→   401→              <p className="text-sm font-bold truncate">{config.title || 'Hero Banner'}</p>
+   402→   402→              <p className="text-xs text-muted-foreground truncate mt-0.5">{config.subtitle}</p>
+   403→   403→              {config.buttonText && <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded bg-foreground text-background">{config.buttonText}</span>}
+   404→   404→            </div>
+   405→   405→          </div>
+   406→   406→        </div>
+   407→   407→      )
+   408→   408→
+   409→   409→    case 'product-grid':
+   410→   410→      return (
+   411→   411→        <div className="p-4">
+   412→   412→          <p className="text-sm font-semibold mb-2">{config.title || 'Product Grid'}</p>
+   413→   413→          <div className="grid grid-cols-4 gap-2">
+   414→   414→            {Array.from({ length: config.limit || 4 }).slice(0, 4).map((_, i) => (
+   415→   415→              <div key={i} className="aspect-square rounded bg-muted/50 flex items-center justify-center">
+   416→   416→                <Grid3x3 className="h-4 w-4 text-muted-foreground/50" />
+   417→   417→              </div>
+   418→   418→            ))}
+   419→   419→          </div>
+   420→   420→          <p className="text-[10px] text-muted-foreground mt-2">Source: {config.source} · {config.limit || 8} products</p>
+   421→   421→        </div>
+   422→   422→      )
+   423→   423→
+   424→   424→    case 'marquee':
+   425→   425→      return (
+   426→   426→        <div className="py-2 overflow-hidden" style={{ backgroundColor: config.bg || '#1a1a1a' }}>
+   427→   427→          <p className="text-xs font-medium text-center px-4 truncate" style={{ color: config.color || '#fff' }}>
+   428→   428→            {config.text || 'Marquee text...'}
+   429→   429→          </p>
+   430→   430→        </div>
+   431→   431→      )
+   432→   432→
+   433→   433→    case 'text':
+   434→   434→      return (
+   435→   435→        <div className={`p-4 text-${config.align || 'center'}`}>
+   436→   436→          <p className="text-sm font-semibold">{config.title || 'Text Block'}</p>
+   437→   437→          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{config.body?.replace(/<[^>]+>/g, '')}</p>
+   438→   438→        </div>
+   439→   439→      )
+   440→   440→
+   441→   441→    case 'image':
+   442→   442→      return (
+   443→   443→        <div className="p-4">
+   444→   444→          {config.url ? (
+   445→   445→            <img src={config.url} alt={config.alt || ''} className="w-full h-24 object-cover rounded" />
+   446→   446→          ) : (
+   447→   447→            <div className="w-full h-24 rounded bg-muted/50 flex items-center justify-center">
+   448→   448→              <ImageIcon className="h-6 w-6 text-muted-foreground/50" />
+   449→   449→            </div>
+   450→   450→          )}
+   451→   451→        </div>
+   452→   452→      )
+   453→   453→
+   454→   454→    case 'newsletter':
+   455→   455→      return (
+   456→   456→        <div className="p-4 bg-foreground text-background text-center">
+   457→   457→          <p className="text-sm font-bold">{config.title || 'Newsletter'}</p>
+   458→   458→          <p className="text-xs opacity-80 mt-0.5">{config.subtitle}</p>
+   459→   459→          <div className="mt-2 inline-flex gap-1">
+   460→   460→            <div className="h-6 w-24 rounded bg-background/20" />
+   461→   461→            <div className="h-6 w-12 rounded bg-background" />
+   462→   462→          </div>
+   463→   463→        </div>
+   464→   464→      )
+   465→   465→
+   466→   466→    case 'discounts':
+   467→   467→      return (
+   468→   468→        <div className="p-4">
+   469→   469→          <p className="text-sm font-semibold mb-2">{config.title || 'Discount Codes'}</p>
+   470→   470→          <div className="flex gap-2">
+   471→   471→            {[1, 2].map(i => (
+   472→   472→              <div key={i} className="flex-1 p-2 rounded border-2 border-dashed border-border">
+   473→   473→                <div className="h-2 w-12 bg-muted rounded mb-1" />
+   474→   474→                <div className="h-3 w-16 bg-muted rounded" />
+   475→   475→              </div>
+   476→   476→            ))}
+   477→   477→          </div>
+   478→   478→        </div>
+   479→   479→      )
+   480→   480→
+   481→   481→    case 'custom-html':
+   482→   482→      return (
+   483→   483→        <div className="p-4">
+   484→   484→          <div className="font-mono text-xs text-muted-foreground bg-muted/30 p-2 rounded line-clamp-3">
+   485→   485→            {config.html || '<!-- Custom HTML -->'}
+   486→   486→          </div>
+   487→   487→        </div>
+   488→   488→      )
+   489→   489→
+   490→   490→    default:
+   491→   491→      return <div className="p-4 text-xs text-muted-foreground">Unknown section type</div>
+   492→   492→  }
+   493→   493→}
+   494→   494→
+   495→   495→function defaultConfig(type) {
+   496→   496→  const defaults = {
+   497→   497→    hero: { title: 'New Section', subtitle: 'Add your subtitle here', buttonText: 'Shop Now', buttonUrl: '/products', image: '', overlay: 'dark' },
+   498→   498→    'product-grid': { title: 'Products', source: 'featured', limit: 8 },
+   499→   499→    marquee: { text: '🔥 Sale now on • Free shipping over $75 • New arrivals weekly 🔥', speed: 'normal', bg: '#1a1a1a', color: '#ffffff' },
+   500→   500→    text: { title: 'Section Title', body: 'Add your text here. HTML is supported.', align: 'center' },
+   501→   501→    image: { url: '', alt: '', link: '', width: 'full' },
+   502→   502→    newsletter: { title: 'Get 10% off your first order', subtitle: 'Subscribe to our newsletter' },
+   503→   503→    discounts: { title: 'Active Discount Codes', showActive: true },
+   504→   504→    'custom-html': { html: '<div>\n  <p>Your custom HTML here.</p>\n</div>' }
+   505→   505→  }
+   506→   506→  return defaults[type] || {}
+   507→   507→}
+   508→   508→
+   509→   509→function SectionConfigEditor({ section, categories, onUpdate }) {
+   510→   510→  const config = section.config
+   511→   511→  const set = (k, v) => onUpdate({ ...config, [k]: v })
+   512→   512→
+   513→   513→  switch (section.sectionType) {
+   514→   514→    case 'hero':
+   515→   515→      return (
+   516→   516→        <div className="space-y-3">
+   517→   517→          <div><Label className="text-xs">Title</Label><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></div>
+   518→   518→          <div><Label className="text-xs">Subtitle</Label><Input value={config.subtitle || ''} onChange={(e) => set('subtitle', e.target.value)} /></div>
+   519→   519→          <div className="grid grid-cols-2 gap-2">
+   520→   520→            <div><Label className="text-xs">Button Text</Label><Input value={config.buttonText || ''} onChange={(e) => set('buttonText', e.target.value)} /></div>
+   521→   521→            <div><Label className="text-xs">Button URL</Label><Input value={config.buttonUrl || ''} onChange={(e) => set('buttonUrl', e.target.value)} /></div>
+   522→   522→          </div>
+   523→   523→          <div>
+   524→   524→            <Label className="text-xs">Background Image</Label>
+   525→   525→            <FileUpload type="image" value={config.image || ''} onChange={(url) => set('image', url)} />
+   526→   526→          </div>
+   527→   527→          <div>
+   528→   528→            <Label className="text-xs">Overlay</Label>
+   529→   529→            <select value={config.overlay || 'dark'} onChange={(e) => set('overlay', e.target.value)} className="h-9 w-full px-3 rounded-md border border-input bg-background text-sm">
+   530→   530→              <option value="dark">Dark (white text)</option>
+   531→   531→              <option value="light">Light (dark text)</option>
+   532→   532→            </select>
+   533→   533→          </div>
+   534→   534→        </div>
+   535→   535→      )
+   536→   536→    case 'product-grid':
+   537→   537→      return (
+   538→   538→        <div className="space-y-3">
+   539→   539→          <div><Label className="text-xs">Title</Label><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></div>
+   540→   540→          <div className="grid grid-cols-2 gap-2">
+   541→   541→            <div>
+   542→   542→              <Label className="text-xs">Source</Label>
+   543→   543→              <select value={config.source || 'featured'} onChange={(e) => set('source', e.target.value)} className="h-9 w-full px-3 rounded-md border border-input bg-background text-sm">
+   544→   544→                <option value="featured">Featured</option>
+   545→   545→                <option value="new">New Arrivals</option>
+   546→   546→                <option value="sale">On Sale</option>
+   547→   547→                <option value="all">All Products</option>
+   548→   548→              </select>
+   549→   549→            </div>
+   550→   550→            <div><Label className="text-xs">Limit</Label><Input type="number" value={config.limit || 8} onChange={(e) => set('limit', parseInt(e.target.value) || 8)} /></div>
+   551→   551→          </div>
+   552→   552→        </div>
+   553→   553→      )
+   554→   554→    case 'marquee':
+   555→   555→      return (
+   556→   556→        <div className="space-y-3">
+   557→   557→          <div><Label className="text-xs">Text</Label><Input value={config.text || ''} onChange={(e) => set('text', e.target.value)} /></div>
+   558→   558→          <div className="grid grid-cols-2 gap-2">
+   559→   559→            <div>
+   560→   560→              <Label className="text-xs">Speed</Label>
+   561→   561→              <select value={config.speed || 'normal'} onChange={(e) => set('speed', e.target.value)} className="h-9 w-full px-3 rounded-md border border-input bg-background text-sm">
+   562→   562→                <option value="slow">Slow</option>
+   563→   563→                <option value="normal">Normal</option>
+   564→   564→                <option value="fast">Fast</option>
+   565→   565→              </select>
+   566→   566→            </div>
+   567→   567→            <div><Label className="text-xs">Background</Label><Input value={config.bg || '#1a1a1a'} onChange={(e) => set('bg', e.target.value)} className="font-mono" type="color" /></div>
+   568→   568→          </div>
+   569→   569→          <div><Label className="text-xs">Text color</Label><Input value={config.color || '#ffffff'} onChange={(e) => set('color', e.target.value)} className="font-mono" type="color" /></div>
+   570→   570→        </div>
+   571→   571→      )
+   572→   572→    case 'text':
+   573→   573→      return (
+   574→   574→        <div className="space-y-3">
+   575→   575→          <div><Label className="text-xs">Title</Label><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></div>
+   576→   576→          <div><Label className="text-xs">Body (HTML supported)</Label><Textarea rows={4} value={config.body || ''} onChange={(e) => set('body', e.target.value)} /></div>
+   577→   577→          <div>
+   578→   578→            <Label className="text-xs">Alignment</Label>
+   579→   579→            <select value={config.align || 'center'} onChange={(e) => set('align', e.target.value)} className="h-9 w-full px-3 rounded-md border border-input bg-background text-sm">
+   580→   580→              <option value="left">Left</option>
+   581→   581→              <option value="center">Center</option>
+   582→   582→              <option value="right">Right</option>
+   583→   583→            </select>
+   584→   584→          </div>
+   585→   585→        </div>
+   586→   586→      )
+   587→   587→    case 'image':
+   588→   588→      return (
+   589→   589→        <div className="space-y-3">
+   590→   590→          <div>
+   591→   591→            <Label className="text-xs">Image</Label>
+   592→   592→            <FileUpload type="image" value={config.url || ''} onChange={(url) => set('url', url)} />
+   593→   593→          </div>
+   594→   594→          <div><Label className="text-xs">Alt text</Label><Input value={config.alt || ''} onChange={(e) => set('alt', e.target.value)} /></div>
+   595→   595→          <div><Label className="text-xs">Link (optional)</Label><Input value={config.link || ''} onChange={(e) => set('link', e.target.value)} placeholder="/products" /></div>
+   596→   596→        </div>
+   597→   597→      )
+   598→   598→    case 'newsletter':
+   599→   599→      return (
+   600→   600→        <div className="space-y-3">
+   601→   601→          <div><Label className="text-xs">Title</Label><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></div>
+   602→   602→          <div><Label className="text-xs">Subtitle</Label><Input value={config.subtitle || ''} onChange={(e) => set('subtitle', e.target.value)} /></div>
+   603→   603→        </div>
+   604→   604→      )
+   605→   605→    case 'discounts':
+   606→   606→      return (
+   607→   607→        <div className="space-y-3">
+   608→   608→          <div><Label className="text-xs">Title</Label><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></div>
+   609→   609→          <p className="text-xs text-muted-foreground">Shows all active discount codes from Admin → Discounts.</p>
+   610→   610→        </div>
+   611→   611→      )
+   612→   612→    case 'custom-html':
+   613→   613→      return (
+   614→   614→        <div className="space-y-3">
+   615→   615→          <div><Label className="text-xs">Custom HTML</Label><Textarea rows={8} value={config.html || ''} onChange={(e) => set('html', e.target.value)} className="font-mono text-xs" /></div>
+   616→   616→        </div>
+   617→   617→      )
+   618→   618→    default:
+   619→   619→      return <p className="text-xs text-muted-foreground">No editor for this section type.</p>
+   620→   620→  }
+   621→   621→}
+   622→   622→
