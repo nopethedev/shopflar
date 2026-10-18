@@ -31,7 +31,7 @@ export default async function HomePage() {
       take: 4
     }),
     db.pageSection.findMany({
-      where: { pageType: 'home' },
+      where: { pageType: 'home', isDraft: false, isDeleted: false },
       orderBy: { sortOrder: 'asc' }
     })
   ])

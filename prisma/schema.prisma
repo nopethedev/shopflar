@@ -546,10 +546,14 @@ model PageSection {
   id          String   @id @default(cuid())
   pageType    String   @default("home") // home | product | custom
   pageId      String?  // for custom pages, references CustomPage.id
-  sectionType String   // hero | product-grid | marquee | text | image | newsletter | custom-html | categories
-  config      String   // JSON config for the section
+  sectionType String   // hero | product-grid | marquee | text | image | newsletter | custom-html | announcement-bar | image-text | testimonials | faq | video | rich-text
+  config      String   // JSON config for the section (published version)
+  draftConfig String?  // JSON config for the section (draft version, null = no draft changes)
   sortOrder   Int      @default(0)
+  draftSortOrder Int?  // null = no draft change
   isVisible   Boolean  @default(true)
+  isDraft     Boolean  @default(false) // true = newly added in draft, not yet published
+  isDeleted   Boolean  @default(false) // true = marked for deletion in draft
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
