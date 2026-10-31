@@ -4,12 +4,15 @@ import { useCart } from '@/lib/cart-store'
 import { useWishlist } from '@/lib/wishlist-store'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/button'
-import { Minus, Plus, ShoppingBag, Heart, Truck, RotateCcw, ShieldCheck, ChevronRight } from 'lucide-react'
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger
+} from '@/components/ui/dialog'
+import { Minus, Plus, ShoppingBag, Heart, Truck, RotateCcw, ShieldCheck, ChevronRight, Dices, Package, Gift } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ReviewForm } from './review-form'
 
-export function ProductDetail({ product, settings }) {
+export function ProductDetail({ product, settings, odds }) {
   const [selectedImage, setSelectedImage] = useState(0)
   const [quantity, setQuantity] = useState(1)
   const [selectedOptions, setSelectedOptions] = useState({})
@@ -244,6 +247,75 @@ export function ProductDetail({ product, settings }) {
           >
             Buy It Now
           </Button>
+        )}
+
+        {/* Mystery box odds (admin-enabled per crate) */}
+        {odds && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="mt-3 w-full h-11 border-dashed">
+                <Dices className="h-4 w-4 mr-2" /> What&apos;s inside? View the odds
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Gift className="h-5 w-5 text-amber-500" /> Mystery box odds
+                </DialogTitle>
+                <DialogDescription>
+                  Every box contains everything below — guaranteed items always, plus{' '}
+                  {odds.poolSize} random pick{odds.poolSize !== 1 ? 's' : ''} from the prize pool.
+                </DialogDescription>
+              </DialogHeader>
+
+              {odds.guaranteed?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Always included</p>
+                  <div className="space-y-2">
+                    {odds.guaranteed.map((it, i) => (
+                      <div key={`g-${i}`} className="flex items-center gap-3 p-2 rounded-md border border-border">
+                        <div className="h-10 w-10 rounded overflow-hidden bg-muted shrink-0 flex items-center justify-center">
+                          {it.imageUrl
+                            ? <img src={it.imageUrl} alt={it.name} className="h-full w-full object-cover" />
+                            : <Package className="h-4 w-4 text-muted-foreground" />}
+                        </div>
+                        <span className="flex-1 text-sm font-medium">{it.name}</span>
+                        <span className="text-xs text-muted-foreground">×{it.quantity || 1}</span>
+                        <span className="text-[10px] font-semibold uppercase bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5">100%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {odds.pool?.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Prize pool — chance per pick</p>
+                  <div className="space-y-2">
+                    {odds.pool.map((it, i) => (
+                      <div key={`p-${i}`} className="flex items-center gap-3 p-2 rounded-md border border-border">
+                        <div className="h-10 w-10 rounded overflow-hidden bg-muted shrink-0 flex items-center justify-center">
+                          {it.imageUrl
+                            ? <img src={it.imageUrl} alt={it.name} className="h-full w-full object-cover" />
+                            : <Package className="h-4 w-4 text-muted-foreground" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{it.name}</p>
+                          <div className="h-1.5 rounded-full bg-muted mt-1.5 overflow-hidden">
+                            <div className="h-full bg-amber-400 rounded-full" style={{ width: `${Math.min(100, it.chance)}%` }} />
+                          </div>
+                        </div>
+                        <span className="text-xs font-semibold tabular-nums">{it.chance}%</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-2">
+                    Odds are per random pick. Chances are weight-based and rounded to one decimal.
+                  </p>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         )}
 
         {/* Trust */}

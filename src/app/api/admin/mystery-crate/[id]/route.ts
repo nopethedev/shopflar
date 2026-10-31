@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 
 export async function PATCH(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const body = await req.json()
@@ -11,7 +12,8 @@ export async function PATCH(req, { params }) {
       data: {
         ...(body.guaranteedItems !== undefined ? { guaranteedItems: body.guaranteedItems } : {}),
         ...(body.poolItems !== undefined ? { poolItems: body.poolItems } : {}),
-        ...(body.poolSize != null ? { poolSize: parseInt(body.poolSize) || 1 } : {})
+        ...(body.poolSize != null ? { poolSize: parseInt(body.poolSize) || 1 } : {}),
+        ...(body.showOdds !== undefined ? { showOdds: !!body.showOdds } : {})
       }
     })
     return NextResponse.json({ crate: updated })
@@ -21,6 +23,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     await db.mysteryCrate.delete({ where: { id: params.id } })

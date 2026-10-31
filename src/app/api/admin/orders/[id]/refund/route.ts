@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth'
 import { getProvider } from '@/lib/payments'
 
 export async function POST(_req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const order = await db.order.findUnique({ where: { id: params.id }, include: { payments: true } })

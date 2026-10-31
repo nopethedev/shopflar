@@ -171,7 +171,8 @@ function normalizeEntries(entries) {
 // ---------- preserved paths ----------
 // These are never overwritten or deleted by an update:
 function isPreserved(rel) {
-  if (rel === '.env' || rel.startsWith('.env.')) return true               // your config
+  if (rel === '.env') return true                                       // your config
+  if (rel.startsWith('.env.') && rel !== '.env.example') return true    // .env.local etc, but ship .env.example updates
   if (rel === 'package.json' || rel === 'package-lock.json') return true   // YOUR package.json (custom scripts/ports)
   if (rel === 'bun.lock' || rel === 'yarn.lock' || rel === 'pnpm-lock.yaml') return true
   if (rel === 'node_modules' || rel.startsWith('node_modules/')) return true

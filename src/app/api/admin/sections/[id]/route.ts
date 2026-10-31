@@ -5,6 +5,7 @@ import { sanitizeSectionConfig } from '@/lib/sanitize'
 
 // PATCH — update a section's draft config (autosave)
 export async function PATCH(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const { id } = await params
@@ -58,6 +59,7 @@ export async function PATCH(req, { params }) {
 
 // DELETE — mark for deletion (draft) or permanently delete if already draft-only
 export async function DELETE(_req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const { id } = await params

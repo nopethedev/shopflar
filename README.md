@@ -439,6 +439,29 @@ Progress and history live in `updates/` (`state.json`, `last-update.json`, `upda
 
 ---
 
+## 18. Mystery Boxes
+
+Any product can be turned into a mystery box (Admin → Plugins → Mystery Crates):
+
+- **Guaranteed items** — always included (with per-item quantities)
+- **Prize pool** — weighted chance-based items; set how many random picks each box contains
+- **Show odds button** — per-crate toggle (in the crate list and the editor). When on, the product page shows a *"What's inside? View the odds"* button that opens a dialog listing the guaranteed items and every pool item with its exact percentage chance (weights converted to %, shown with a bar)
+
+**Reveal experience:** the customer adds the box to the cart, pays, and the order confirmation page shows a *"Mystery box"* section — tap the wiggling box to open it and the won items pop in one by one (guaranteed items are tagged, lucky draws are tagged). Contents are decided server-side at order time (`Order.mysteryReveals`) and are also visible in Admin → Orders → order detail under *"Games & Mystery Boxes"*.
+
+## 19. Free Order Dice
+
+A configurable post-purchase mini game (Admin → Store Settings → Free Order Dice):
+
+- **Enable** the game, set **dice sides** (e.g. 6) and the **winning number** (e.g. 6 → win chance 1 in 6)
+- After paying, the order success page shows the **Lucky Dice** panel with a *Roll the dice* button and an animated dice tumble
+- **Winners get a coupon for the order total** — a single-use `LUCKY-XXXXXX` fixed-amount discount is created automatically, shown on screen with a copy button and emailed to the customer. The payment itself is never refunded.
+- Small imprint shown under the game and in the win email: *"Doesn't refund — if you win, you get a coupon for the same price."*
+
+**Anti-cheat / correctness:** the roll happens only on the server, exactly once per order (atomic claim on `Order.diceRoll`), the result is persisted (`diceRoll`, `diceTarget`, `diceWon`, `diceCouponCode`), refreshing or replaying can't re-roll, and clients can't influence the outcome. Coupons appear in Admin → Discounts with source `dice`. Only **paid** orders with a total above zero can play.
+
+---
+
 ## Architecture Overview
 
 ```

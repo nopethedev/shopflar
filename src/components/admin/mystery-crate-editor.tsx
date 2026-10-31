@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from '@/lib/toast'
-import { Gift, Plus, Trash2, Save, Dice5, Package, ArrowRight } from 'lucide-react'
+import { Gift, Plus, Trash2, Save, Dice5, Package, ArrowRight, Eye } from 'lucide-react'
 
 export function MysteryCrateEditor({ products, initialCrates }) {
   const router = useRouter()
@@ -22,12 +23,14 @@ export function MysteryCrateEditor({ products, initialCrates }) {
   const [guaranteedItems, setGuaranteedItems] = useState([])
   const [poolItems, setPoolItems] = useState([])
   const [poolSize, setPoolSize] = useState(1)
+  const [showOdds, setShowOdds] = useState(false)
 
   const startNew = () => {
     setEditing({ isNew: true, productId: '' })
     setGuaranteedItems([])
     setPoolItems([])
     setPoolSize(1)
+    setShowOdds(false)
     setSelectedProductId('')
   }
 
@@ -36,6 +39,7 @@ export function MysteryCrateEditor({ products, initialCrates }) {
     setGuaranteedItems(JSON.parse(crate.guaranteedItems || '[]'))
     setPoolItems(JSON.parse(crate.poolItems || '[]'))
     setPoolSize(crate.poolSize || 1)
+    setShowOdds(!!crate.showOdds)
   }
 
   const cancel = () => {
@@ -70,7 +74,8 @@ export function MysteryCrateEditor({ products, initialCrates }) {
         productId,
         guaranteedItems: JSON.stringify(guaranteedItems),
         poolItems: JSON.stringify(poolItems),
-        poolSize: parseInt(poolSize) || 1
+        poolSize: parseInt(poolSize) || 1,
+        showOdds
       }
       const url = editing.isNew ? '/api/admin/mystery-crate' : `/api/admin/mystery-crate/${editing.id}`
       const method = editing.isNew ? 'POST' : 'PATCH'
@@ -86,6 +91,22 @@ export function MysteryCrateEditor({ products, initialCrates }) {
       toast.error('Failed', e.message)
     } finally {
       setSaving(null)
+    }
+  }
+
+  const toggleOdds = async (crate, value) => {
+    try {
+      const r = await fetch(`/api/admin/mystery-crate/${crate.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showOdds: value })
+      })
+      if (r.ok) {
+        toast.success(value ? 'Odds button enabled' : 'Odds button hidden')
+        router.refresh()
+      } else throw new Error('Failed')
+    } catch (e) {
+      toast.error('Failed', e.message)
     }
   }
 
@@ -116,6 +137,13 @@ export function MysteryCrateEditor({ products, initialCrates }) {
                       {guaranteed.length} guaranteed + {pool.length} pool items, {c.poolSize} random pick{c.poolSize !== 1 ? 's' : ''}
                     </p>
                   </div>
+                  <label
+                    className="flex items-center gap-2 mr-3 cursor-pointer"
+                    title="Show the “View odds” button on the product page"
+                  >
+                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Switch checked={!!c.showOdds} onCheckedChange={(v) => toggleOdds(c, v)} />
+                  </label>
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" onClick={() => startEdit(c)}>Edit</Button>
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => del(c.id)}>
@@ -238,6 +266,18 @@ export function MysteryCrateEditor({ products, initialCrates }) {
               onChange={(e) => setPoolSize(parseInt(e.target.value) || 1)}
               className="w-24 mt-1"
             />
+          </div>
+
+          {/* Show odds button on the product page */}
+          <div className="flex items-start justify-between gap-4 p-3 rounded-md border border-border">
+            <div>
+              <Label className="text-sm font-medium flex items-center gap-1.5"><Eye className="h-3.5 w-3.5" /> Show odds button on product page</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Adds a “View the odds” button under the buy buttons so customers can see the guaranteed
+                items and each pool item's chance before buying.
+              </p>
+            </div>
+            <Switch checked={showOdds} onCheckedChange={setShowOdds} />
           </div>
 
           <div className="p-3 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">

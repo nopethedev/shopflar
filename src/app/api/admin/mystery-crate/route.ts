@@ -13,7 +13,8 @@ export async function POST(req) {
         productId: body.productId,
         guaranteedItems: body.guaranteedItems || '[]',
         poolItems: body.poolItems || '[]',
-        poolSize: parseInt(body.poolSize) || 1
+        poolSize: parseInt(body.poolSize) || 1,
+        showOdds: !!body.showOdds
       }
     })
     return NextResponse.json({ crate })

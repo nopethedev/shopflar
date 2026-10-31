@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { toast } from '@/lib/toast'
-import { Save, Database, RefreshCw, Trash2, Download, Upload, ShieldCheck } from 'lucide-react'
+import { Save, Database, RefreshCw, Trash2, Download, Upload, ShieldCheck, Dices } from 'lucide-react'
 
 export function AdminSystemSettings({ settings, smtpConfigured }) {
   const router = useRouter()
@@ -15,7 +15,10 @@ export function AdminSystemSettings({ settings, smtpConfigured }) {
   const [form, setForm] = useState({
     currency: settings.currency || 'USD',
     currency_symbol: settings.currency_symbol || '$',
-    require_email_verification: settings.require_email_verification !== 'false' ? 'true' : 'false'
+    require_email_verification: settings.require_email_verification !== 'false' ? 'true' : 'false',
+    free_order_dice_enabled: settings.free_order_dice_enabled === 'true' ? 'true' : 'false',
+    free_order_dice_sides: settings.free_order_dice_sides || '6',
+    free_order_dice_target: settings.free_order_dice_target || '6'
   })
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -122,6 +125,64 @@ export function AdminSystemSettings({ settings, smtpConfigured }) {
         <Button onClick={save} disabled={saving}>
           <Save className="h-4 w-4 mr-2" />
           {saving ? 'Saving...' : 'Save Security Settings'}
+        </Button>
+      </Card>
+
+      <Card className="p-5 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2">
+          <Dices className="h-4 w-4" /> Free Order Dice
+        </h3>
+        <p className="text-sm text-muted-foreground max-w-xl">
+          After paying, customers can roll a dice on the order confirmation page. If they roll your
+          winning number, you automatically issue them a coupon worth the order total — so the order is
+          effectively free for them, but the money stays settled with your payment provider.
+        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label className="font-medium">Enable Free Order Dice</Label>
+            <p className="text-sm text-muted-foreground mt-1 max-w-xl">
+              Shows the dice game on the order success page for paid orders.
+            </p>
+          </div>
+          <Switch
+            checked={form.free_order_dice_enabled === 'true'}
+            onCheckedChange={(v) => set('free_order_dice_enabled', v ? 'true' : 'false')}
+          />
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <Label>Dice sides</Label>
+            <Input
+              type="number" min="2" max="100"
+              value={form.free_order_dice_sides}
+              onChange={(e) => set('free_order_dice_sides', e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground mt-1">e.g. 6 for a classic dice</p>
+          </div>
+          <div>
+            <Label>Winning number</Label>
+            <Input
+              type="number" min="1" max="100"
+              value={form.free_order_dice_target}
+              onChange={(e) => set('free_order_dice_target', e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Roll this number to win. Win chance = 1 in {Math.max(2, parseInt(form.free_order_dice_sides) || 6)}
+              {parseInt(form.free_order_dice_target) > (parseInt(form.free_order_dice_sides) || 6) && (
+                <span className="text-amber-600"> — clamped to {Math.max(2, parseInt(form.free_order_dice_sides) || 6)} (above max)</span>
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="p-3 rounded-md bg-muted/60 border border-border text-xs text-muted-foreground">
+          <strong className="text-foreground">How winning works:</strong> the dice is rolled server-side exactly once per
+          paid order, the result is stored with the order (no re-rolls, no client tampering), and winners receive a
+          single-use coupon for the order total by email and on screen.{' '}<em>Doesn&apos;t refund — winners get a
+          coupon for the same price.</em>{' '}Coupon codes appear in Admin → Discounts with source “dice”.
+        </div>
+        <Button onClick={save} disabled={saving}>
+          <Save className="h-4 w-4 mr-2" />
+          {saving ? 'Saving...' : 'Save Dice Settings'}
         </Button>
       </Card>
 

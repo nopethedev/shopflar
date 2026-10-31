@@ -97,6 +97,50 @@ export default async function AdminOrderDetailPage({ params }) {
               </ul>
             </div>
           )}
+
+          {/* Mystery box + Free Order Dice results */}
+          {(order.diceRoll != null || order.mysteryReveals) && (
+            <div className="rounded-xl border border-border bg-background p-5">
+              <h2 className="font-semibold mb-3">Games &amp; Mystery Boxes</h2>
+              {order.mysteryReveals && (() => {
+                try {
+                  const reveals = JSON.parse(order.mysteryReveals)
+                  if (Array.isArray(reveals) && reveals.length > 0) {
+                    return (
+                      <div className="mb-3">
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Mystery box contents</p>
+                        <ul className="text-sm space-y-0.5">
+                          {reveals.map((r, i) => (
+                            <li key={i}>
+                              <span className="font-medium">{r.crateName}</span>
+                              {r.quantity > 1 && ` ×${r.quantity}`}
+                              {' — '}{(r.surprises || []).map(s => s.name).join(', ') || 'no random picks'}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )
+                  }
+                } catch {}
+                return null
+              })()}
+              {order.diceRoll != null && (
+                <div className="text-sm">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Free Order Dice</p>
+                  <p>
+                    Rolled <span className="font-semibold">{order.diceRoll}</span>
+                    {' '}(target {order.diceTarget}) —{' '}
+                    {order.diceWon
+                      ? <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200" variant="outline">WON</Badge>
+                      : <Badge variant="secondary">No win</Badge>}
+                  </p>
+                  {order.diceCouponCode && (
+                    <p className="mt-1">Coupon issued: <code className="bg-muted px-1.5 py-0.5 rounded font-mono">{order.diceCouponCode}</code></p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">

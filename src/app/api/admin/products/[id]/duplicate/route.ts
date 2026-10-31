@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth'
 import { slugify } from '@/lib/settings'
 
 export async function POST(_req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const original = await db.product.findUnique({

@@ -1,6 +1,8 @@
 import { db } from '@/lib/db'
 import { getStoreSettings } from '@/lib/settings'
+import { getDiceConfig } from '@/lib/dice'
 import { StorefrontLayout } from '@/components/storefront/storefront-layout'
+import { MysteryReveal, DiceGame } from '@/components/storefront/order-extras'
 import { CheckCircle2, Package, Truck, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -12,12 +14,19 @@ export default async function SuccessPage({ searchParams }) {
   const sp = await searchParams
   const settings = await getStoreSettings()
   const categories = await db.category.findMany({ where: { isVisible: true } })
-  const order = await db.order.findUnique({
-    where: { id: sp.order },
-    include: { items: true }
-  }).catch(() => null)
+  const [order, diceConfig] = await Promise.all([
+    db.order.findUnique({
+      where: { id: sp.order },
+      include: { items: true }
+    }).catch(() => null),
+    getDiceConfig()
+  ])
 
   if (!order) notFound()
+
+  let reveals = []
+  try { reveals = JSON.parse(order.mysteryReveals || '[]') } catch { reveals = [] }
+  const showDice = diceConfig.enabled && order.paymentStatus === 'PAID' && order.total > 0
 
   return (
     <StorefrontLayout settings={settings} categories={categories}>
@@ -36,6 +45,12 @@ export default async function SuccessPage({ searchParams }) {
             A confirmation email has been sent to <span className="font-medium text-foreground">{order.email}</span>
           </p>
         </div>
+
+        {reveals.length > 0 && <MysteryReveal reveals={reveals} />}
+
+        {showDice && (
+          <DiceGame orderId={order.id} sides={diceConfig.sides} target={diceConfig.target} currencySymbol={settings.currencySymbol || '$'} />
+        )}
 
         <div className="mt-10 rounded-lg border border-border p-5">
           <h2 className="font-semibold mb-4">Order details</h2>

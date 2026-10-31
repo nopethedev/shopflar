@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/auth'
 import { slugify } from '@/lib/settings'
 
 export async function GET(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const product = await db.product.findUnique({
@@ -25,6 +26,7 @@ export async function GET(req, { params }) {
 }
 
 export async function PATCH(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const body = await req.json()
@@ -159,6 +161,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     await db.product.delete({ where: { id: params.id } })

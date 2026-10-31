@@ -195,7 +195,7 @@ async function main() {
   for (const sm of [
     { id: 'standard-free', name: 'Standard Shipping', description: '3-5 business days', price: 0, freeShippingThreshold: 75, countries: '["US","CA"]', estimatedDays: '3-5', sortOrder: 1 },
     { id: 'express', name: 'Express Shipping', description: '1-2 business days', price: 18.50, countries: '["US","CA"]', estimatedDays: '1-2', sortOrder: 2 },
-    { id: 'international', name: 'International Shipping', description: '7-14 business days', price: 32.00, countries: 'ALL', estimatedDays: '7-14', sortOrder: 3 }
+    { id: 'international', name: 'International Shipping', description: '7-14 business days', price: 32.00, countries: '["ALL"]', estimatedDays: '7-14', sortOrder: 3 }
   ]) {
     await db.shippingMethod.upsert({ where: { id: sm.id }, update: {}, create: sm })
   }

@@ -43,6 +43,40 @@ export default async function ProductPage({ params }) {
     notFound()
   }
 
+  // Mystery crate odds (shown via the "Odds" button when enabled)
+  let odds = null
+  const crate = await db.mysteryCrate.findUnique({ where: { productId: product.id } })
+  if (crate?.showOdds) {
+    const guaranteed = JSON.parse(crate.guaranteedItems || '[]')
+    const pool = JSON.parse(crate.poolItems || '[]')
+    const ids = [...guaranteed.map(g => g.productId), ...pool.map(p => p.productId)]
+      .filter((v, i, a) => a.indexOf(v) === i)
+    const poolProducts = ids.length
+      ? await db.product.findMany({
+          where: { id: { in: ids } },
+          include: { images: { take: 1, orderBy: { sortOrder: 'asc' } } }
+        })
+      : []
+    const withProduct = (entry) => {
+      const p = poolProducts.find(pp => pp.id === entry.productId)
+      return {
+        name: p?.name || 'Unknown item',
+        imageUrl: p?.images?.[0]?.url || null,
+        ...(entry.quantity != null ? { quantity: entry.quantity } : {}),
+        ...(entry.weight != null ? { weight: entry.weight } : {})
+      }
+    }
+    const totalWeight = pool.reduce((s, p) => s + (p.weight || 1), 0)
+    odds = {
+      poolSize: crate.poolSize,
+      guaranteed: guaranteed.map(withProduct),
+      pool: pool.map(p => ({
+        ...withProduct(p),
+        chance: totalWeight > 0 ? +(((p.weight || 1) / totalWeight) * 100).toFixed(1) : 0
+      }))
+    }
+  }
+
   // Related products
   const catIds = product.categories.map(c => c.categoryId)
   const related = await db.product.findMany({
@@ -75,7 +109,7 @@ export default async function ProductPage({ params }) {
       <div className="container-ecom py-6 md:py-8">
         <Breadcrumbs items={crumbs} />
         <div className="mt-6">
-          <ProductDetail product={product} settings={settings} />
+          <ProductDetail product={product} settings={settings} odds={odds} />
         </div>
 
         {related.length > 0 && (

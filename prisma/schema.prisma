@@ -280,6 +280,13 @@ model Order {
   paymentProvider String?
   paymentRef      String?
   printifyOrderId String?
+  // Mystery crate reveal data (JSON): what the customer won, per crate
+  mysteryReveals  String?
+  // Free Order Dice game (rolled once, server-side, after payment)
+  diceRoll        Int?      // 1..sides
+  diceTarget      Int?      // winning number at roll time
+  diceWon         Boolean   @default(false)
+  diceCouponCode  String?   // coupon issued on a win
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -342,6 +349,7 @@ model Discount {
   perCustomerLimit Int?
   usedCount       Int      @default(0)
   isActive        Boolean  @default(true)
+  source          String   @default("manual") // manual | dice | newsletter
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   usage          DiscountUsage[]
@@ -532,6 +540,7 @@ model MysteryCrate {
   guaranteedItems String // JSON: [{productId, quantity}] — always included
   poolItems   String   // JSON: [{productId, weight}] — chance-based items
   poolSize    Int      @default(1) // how many random items from pool to include
+  showOdds    Boolean  @default(false) // show the "Odds" button on the product page
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)

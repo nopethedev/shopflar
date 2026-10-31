@@ -4,6 +4,7 @@ import { manuallyFulfillOrder } from '@/lib/fulfillment'
 
 // POST /api/admin/orders/[id]/fulfill — manually send an order to a fulfillment provider
 export async function POST(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const { id } = await params

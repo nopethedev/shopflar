@@ -79,7 +79,14 @@ export async function calculateOrder({ items, discountCode, shippingMethodId, co
   if (shippingMethodId) {
     shippingMethod = await db.shippingMethod.findUnique({ where: { id: shippingMethodId } })
     if (!shippingMethod || !shippingMethod.isActive) throw new Error('Shipping method not available')
-    const allowedCountries = JSON.parse(shippingMethod.countries || '["ALL"]')
+    // countries is a JSON array string; tolerate legacy raw "ALL" or comma lists
+    let allowedCountries = []
+    try {
+      allowedCountries = JSON.parse(shippingMethod.countries || '["ALL"]')
+      if (!Array.isArray(allowedCountries)) allowedCountries = [String(allowedCountries)]
+    } catch {
+      allowedCountries = String(shippingMethod.countries || 'ALL').split(',').map(s => s.trim()).filter(Boolean)
+    }
     if (!allowedCountries.includes('ALL') && country && !allowedCountries.includes(country)) {
       throw new Error('Shipping method not available in your country')
     }
@@ -186,11 +193,14 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
 
   // ============ Mystery Crate expansion ============
   // For each item that's a mystery crate, add the guaranteed + random items
+  // and record what the customer won (shown as a reveal on the success page).
   try {
     const mysteryCrates = await db.mysteryCrate.findMany({
       where: { productId: { in: calc.items.map(it => it.productId) } },
       include: { product: { include: { images: { take: 1, orderBy: { sortOrder: 'asc' } } } } }
     })
+
+    const reveals = []
 
     for (const crate of mysteryCrates) {
       const orderItem = order.items.find(it => it.productId === crate.productId)
@@ -199,6 +209,14 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
 
       const guaranteed = JSON.parse(crate.guaranteedItems || '[]')
       const pool = JSON.parse(crate.poolItems || '[]')
+
+      const reveal = {
+        crateName: crate.product.name,
+        crateImageUrl: crate.product.images?.[0]?.url || null,
+        quantity: crateQuantity,
+        guaranteed: [],
+        surprises: []
+      }
 
       // Add guaranteed items (multiplied by crate quantity)
       for (const g of guaranteed) {
@@ -217,6 +235,11 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
             quantity: (g.quantity || 1) * crateQuantity,
             imageUrl: product.images?.[0]?.url || null
           }
+        })
+        reveal.guaranteed.push({
+          name: product.name,
+          imageUrl: product.images?.[0]?.url || null,
+          quantity: (g.quantity || 1) * crateQuantity
         })
       }
 
@@ -248,9 +271,22 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
                 imageUrl: product.images?.[0]?.url || null
               }
             })
+            reveal.surprises.push({
+              name: product.name,
+              imageUrl: product.images?.[0]?.url || null
+            })
           }
         }
       }
+
+      reveals.push(reveal)
+    }
+
+    if (reveals.length > 0) {
+      await db.order.update({
+        where: { id: order.id },
+        data: { mysteryReveals: JSON.stringify(reveals) }
+      }).catch((e) => console.error('Failed to save mystery reveal data:', e.message))
     }
   } catch (e) {
     console.error('Mystery crate expansion failed:', e.message)

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 
 export async function PATCH(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const body = await req.json()
@@ -26,6 +27,7 @@ export async function PATCH(req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     await db.shippingMethod.delete({ where: { id: params.id } })

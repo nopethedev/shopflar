@@ -5,6 +5,7 @@ import { createVerificationToken, sendVerificationEmail } from '@/lib/verificati
 
 // PATCH: update role and/or email-verified status
 export async function PATCH(req, { params }) {
+  params = await params
   try {
     await requireSuperAdmin()
     const body = await req.json()
@@ -38,6 +39,7 @@ export async function PATCH(req, { params }) {
 
 // POST: resend the verification email to this user (admin action)
 export async function POST(_req, { params }) {
+  params = await params
   try {
     await requireSuperAdmin()
     const user = await db.user.findUnique({ where: { id: params.id } })
@@ -60,6 +62,7 @@ export async function POST(_req, { params }) {
 }
 
 export async function DELETE(_req, { params }) {
+  params = await params
   try {
     await requireSuperAdmin()
     await db.user.delete({ where: { id: params.id } })

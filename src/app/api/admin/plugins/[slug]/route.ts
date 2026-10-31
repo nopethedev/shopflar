@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 
 export async function PATCH(req, { params }) {
+  params = await params
   try {
     await requireAdmin()
     const body = await req.json()
