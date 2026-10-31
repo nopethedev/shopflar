@@ -55,6 +55,44 @@ export function AdminFulfillmentManager({ settings: initial }) {
 
   return (
     <div className="space-y-4">
+      {/* Auto-fulfillment toggle */}
+      <Card className="p-5">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
+              <Zap className="h-5 w-5 text-purple-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold">Auto-Fulfillment</h3>
+              <p className="text-xs text-muted-foreground">
+                Automatically send orders to fulfillment providers when they're paid.
+                Turn off to use the manual "Fulfill" button in the Orders list instead.
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={settings.autoFulfillment !== false}
+            onCheckedChange={(v) => {
+              setSettings(s => ({ ...s, autoFulfillment: v }))
+              fetch('/api/admin/fulfillment', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auto_enabled: v })
+              }).then(() => {
+                toast.success(v ? 'Auto-fulfillment enabled' : 'Auto-fulfillment disabled — use "Fulfill" button in Orders')
+                router.refresh()
+              })
+            }}
+            aria-label="Toggle auto-fulfillment"
+          />
+        </div>
+        {!settings.autoFulfillment && (
+          <div className="mt-3 p-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-700">
+            Auto-fulfillment is OFF. You can manually fulfill orders from Admin → Orders → Fulfill button.
+          </div>
+        )}
+      </Card>
+
       {/* Printify (existing integration) */}
       <Card className="p-5">
         <div className="flex items-start justify-between mb-4">

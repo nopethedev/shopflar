@@ -272,18 +272,22 @@ export async function getFulfillmentSettings() {
   ])
 
   const rows = await db.storeSetting.findMany({
-    where: { key: { startsWith: 'fulfillment_enabled_' } }
+    where: { key: { startsWith: 'fulfillment_' } }
   }).catch(() => [])
-  const enabledMap = new Map(rows.map(r => [r.key, r.value]))
+  const settingsMap = new Map(rows.map(r => [r.key, r.value]))
+
+  // Auto-fulfillment is ON by default, can be toggled off
+  const autoFulfillment = settingsMap.get('fulfillment_auto_enabled') !== 'false'
 
   return {
+    autoFulfillment,
     printful: {
-      enabled: enabledMap.get('fulfillment_enabled_printful') === 'true',
+      enabled: settingsMap.get('fulfillment_enabled_printful') === 'true',
       configured: !!printfulKey,
       apiKey: printfulKey ? '••••••••••••' : ''
     },
     cj: {
-      enabled: enabledMap.get('fulfillment_enabled_cj') === 'true',
+      enabled: settingsMap.get('fulfillment_enabled_cj') === 'true',
       configured: !!(cjEmail && cjKey),
       email: cjEmail || '',
       apiKey: cjKey ? '••••••••••••' : ''
@@ -297,6 +301,8 @@ export async function getFulfillmentSettings() {
 
 export async function getEnabledProviders() {
   const settings = await getFulfillmentSettings()
+  if (!settings.autoFulfillment) return [] // auto-fulfillment disabled globally
+
   const list = []
   if (settings.printify.enabled && settings.printify.configured) list.push('printify')
   if (settings.printful.enabled && settings.printful.configured) list.push('printful')
@@ -307,8 +313,15 @@ export async function getEnabledProviders() {
 // ============ Auto-fulfillment ============
 // Called when an order is marked as PAID — sends the order to all
 // configured fulfillment providers that have linked items.
+// Can be disabled globally via Admin → Fulfillment → Auto-fulfillment toggle.
 export async function autoFulfillOrder(order) {
   try {
+    const settings = await getFulfillmentSettings()
+    if (!settings.autoFulfillment) {
+      console.log('[FULFILLMENT] Auto-fulfillment is disabled — skipping')
+      return []
+    }
+
     const enabled = await getEnabledProviders()
     const results = []
 
@@ -340,4 +353,28 @@ export async function autoFulfillOrder(order) {
     console.error('[FULFILLMENT] Auto-fulfill failed:', e.message)
     return []
   }
+}
+
+// ============ Manual fulfillment ============
+// Called from the admin panel "Fulfill" button — sends order to a specific provider
+export async function manuallyFulfillOrder(orderId, providerName) {
+  const order = await db.order.findUnique({ where: { id: orderId }, include: { items: true } })
+  if (!order) throw new FulfillmentError('Order not found')
+
+  const provider = getFulfillmentProvider(providerName)
+  if (!provider) throw new FulfillmentError(`Unknown provider: ${providerName}`)
+
+  const configured = await provider.isConfigured()
+  if (!configured) throw new FulfillmentError(`${providerName} is not configured. Add your API credentials in Admin → Fulfillment.`)
+
+  const result = await provider.createOrder(order)
+  if (result) {
+    await db.order.update({
+      where: { id: order.id },
+      data: {
+        printifyOrderId: providerName === 'printify' ? (result.id || '') : undefined
+      }
+    }).catch(() => {})
+  }
+  return result
 }

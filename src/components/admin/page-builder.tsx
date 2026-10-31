@@ -73,8 +73,9 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
     autosave(id, config)
   }
 
-  const addSection = async (type) => {
+  const addSection = async (type, insertAt = null) => {
     try {
+      const sortOrder = insertAt !== null ? insertAt : sections.length
       const r = await fetch('/api/admin/sections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,14 +84,21 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
           pageId,
           sectionType: type,
           config: defaultConfig(type),
-          sortOrder: sections.length,
+          sortOrder,
           isVisible: true
         })
       })
       if (r.ok) {
         const d = await r.json()
-        setSections([...sections, d.section])
-        setSelectedSection(d.section.id)
+        const newSec = { ...d.section, config: typeof d.section.config === 'string' ? JSON.parse(d.section.config) : d.section.config }
+        setSections(prev => {
+          const updated = insertAt !== null
+            ? [...prev.slice(0, insertAt), newSec, ...prev.slice(insertAt)]
+            : [...prev, newSec]
+          // Re-sort
+          return updated.map((s, i) => ({ ...s, sortOrder: i }))
+        })
+        setSelectedSection(newSec.id)
         setHasDraftChanges(true)
         toast.success('Section added — click Publish to make it live')
         setAdding(false)
@@ -100,6 +108,14 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
     } catch (e) {
       toast.error('Failed', e.message)
     }
+  }
+
+  // Handle drag-from-palette drop
+  const handlePaletteDrop = async (e, targetIndex) => {
+    e.preventDefault()
+    const sectionType = e.dataTransfer.getData('section-type')
+    if (!sectionType) return
+    await addSection(sectionType, targetIndex)
   }
 
   const toggleVisible = async (id) => {
@@ -262,8 +278,39 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
   const previewWidth = previewDevice === 'mobile' ? 'max-w-[375px]' : previewDevice === 'tablet' ? 'max-w-[768px]' : 'max-w-full'
 
   return (
-    <div className="flex gap-6">
-      {/* ===== Left: Section list + preview ===== */}
+    <div className="flex gap-4">
+      {/* ===== Left sidebar: Section palette (drag source) ===== */}
+      <div className="w-56 shrink-0">
+        <div className="sticky top-24">
+          <Card className="p-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+              <GripVertical className="h-3.5 w-3.5" /> Sections
+            </h3>
+            <p className="text-[10px] text-muted-foreground mb-3">Drag onto the page</p>
+            <div className="space-y-1 max-h-[70vh] overflow-y-auto">
+              {SECTION_TYPES.map(t => (
+                <div
+                  key={t.type}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('section-type', t.type)
+                    e.dataTransfer.effectAllowed = 'copy'
+                  }}
+                  onClick={() => addSection(t.type)}
+                  className="flex items-center gap-2 px-2 py-2 rounded-md cursor-grab active:cursor-grabbing hover:bg-muted transition-colors group"
+                  title={t.description}
+                >
+                  <t.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground shrink-0" />
+                  <span className="text-xs font-medium truncate">{t.label}</span>
+                  <Plus className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 ml-auto shrink-0" />
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* ===== Center: Section list + preview ===== */}
       <div className="flex-1 min-w-0 space-y-4">
         {/* Toolbar */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -322,51 +369,72 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
 
         {/* Preview canvas */}
         <div className={`mx-auto transition-all ${previewWidth}`}>
-          <div className="rounded-xl border-2 border-dashed border-border overflow-hidden bg-background">
+          <div
+            className="rounded-xl border-2 border-dashed border-border overflow-hidden bg-background"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => handlePaletteDrop(e, sections.length)}
+          >
             {sections.length === 0 ? (
               <div className="p-16 text-center">
                 <Layout className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
                 <h3 className="font-semibold">Your page is empty</h3>
                 <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
-                  Add sections above to build your page. Changes are saved as drafts — click Publish to make them live.
+                  Drag sections from the left panel, or click one to add it. Changes are saved as drafts — click Publish to make them live.
                 </p>
               </div>
             ) : (
               <div className="divide-y divide-border">
+                {/* Drop zone at top */}
+                <div
+                  className="h-1 transition-all hover:h-8 hover:bg-blue-50 flex items-center justify-center cursor-pointer"
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+                  onDrop={(e) => handlePaletteDrop(e, 0)}
+                >
+                  <span className="text-[10px] text-blue-400 opacity-0 hover:opacity-100">Drop here</span>
+                </div>
                 {sections.map((section, idx) => {
                   const sectionType = SECTION_TYPES.find(t => t.type === section.sectionType)
                   const Icon = sectionType?.icon || Code
                   const isSelected = selectedSection === section.id
                   const isDragOver = dragOverId === section.id
                   return (
-                    <div
-                      key={section.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, section.id)}
-                      onDragOver={(e) => handleDragOver(e, section.id)}
-                      onDrop={(e) => handleDrop(e, section.id)}
-                      onDragEnd={() => { setDraggedId(null); setDragOverId(null) }}
-                      className={`relative group transition-all ${isSelected ? 'ring-2 ring-foreground ring-inset' : ''} ${isDragOver ? 'border-t-4 border-t-foreground' : ''} ${!section.isVisible ? 'opacity-50' : ''}`}
-                    >
-                      {/* Section header bar */}
-                      <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b border-border">
-                        <div className="flex items-center gap-2">
-                          <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing" />
-                          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-xs font-medium">{sectionType?.label || section.sectionType}</span>
-                          {!section.isVisible && <Badge variant="secondary" className="text-[10px]">Hidden</Badge>}
+                    <div key={section.id}>
+                      <div
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, section.id)}
+                        onDragOver={(e) => handleDragOver(e, section.id)}
+                        onDrop={(e) => handleDrop(e, section.id)}
+                        onDragEnd={() => { setDraggedId(null); setDragOverId(null) }}
+                        className={`relative group transition-all ${isSelected ? 'ring-2 ring-foreground ring-inset' : ''} ${isDragOver ? 'border-t-4 border-t-foreground' : ''} ${!section.isVisible ? 'opacity-50' : ''}`}
+                      >
+                        {/* Section header bar */}
+                        <div className="flex items-center justify-between px-3 py-2 bg-muted/30 border-b border-border">
+                          <div className="flex items-center gap-2">
+                            <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing" />
+                            <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="text-xs font-medium">{sectionType?.label || section.sectionType}</span>
+                            {!section.isVisible && <Badge variant="secondary" className="text-[10px]">Hidden</Badge>}
+                          </div>
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => moveSection(section.id, 'up')} disabled={idx === 0} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => moveSection(section.id, 'down')} disabled={idx === sections.length - 1} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => duplicateSection(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground" aria-label="Duplicate"><Copy className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => toggleVisible(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground" aria-label="Toggle visibility">{section.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</button>
+                            <button onClick={() => delSection(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-destructive" aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => moveSection(section.id, 'up')} disabled={idx === 0} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Move up"><ArrowUp className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => moveSection(section.id, 'down')} disabled={idx === sections.length - 1} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Move down"><ArrowDown className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => duplicateSection(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground" aria-label="Duplicate"><Copy className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => toggleVisible(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground" aria-label="Toggle visibility">{section.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</button>
-                          <button onClick={() => delSection(section.id)} className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-destructive" aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                        {/* Live preview */}
+                        <div className="cursor-pointer" onClick={() => setSelectedSection(section.id)}>
+                          <SectionPreview section={section} categories={categories} />
                         </div>
                       </div>
-                      {/* Live preview */}
-                      <div className="cursor-pointer" onClick={() => setSelectedSection(section.id)}>
-                        <SectionPreview section={section} categories={categories} />
+                      {/* Drop zone between sections */}
+                      <div
+                        className="h-1 transition-all hover:h-8 hover:bg-blue-50 flex items-center justify-center cursor-pointer"
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+                        onDrop={(e) => handlePaletteDrop(e, idx + 1)}
+                      >
+                        <span className="text-[10px] text-blue-400 opacity-0 hover:opacity-100">Drop here</span>
                       </div>
                     </div>
                   )

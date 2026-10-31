@@ -23,6 +23,16 @@ export async function PATCH(req) {
     const body = await req.json()
 
     for (const [key, value] of Object.entries(body)) {
+      // Handle auto-fulfillment toggle
+      if (key === 'auto_enabled') {
+        await db.storeSetting.upsert({
+          where: { key: 'fulfillment_auto_enabled' },
+          update: { value: String(value) },
+          create: { key: 'fulfillment_auto_enabled', value: String(value) }
+        })
+        continue
+      }
+
       // Handle enable/disable toggles
       if (key.startsWith('enabled_')) {
         await db.storeSetting.upsert({

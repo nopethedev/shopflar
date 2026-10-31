@@ -5,7 +5,8 @@ import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
+import { toast } from '@/lib/toast'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table'
@@ -109,9 +110,14 @@ export function AdminOrdersTable({ orders, total, page, limit, status, search, s
                   </span>
                 </TableCell>
                 <TableCell>
-                  <Link href={`/admin/orders/${o.id}`} className="text-sm font-medium hover:underline text-foreground">
-                    View
-                  </Link>
+                  <div className="flex items-center gap-1.5">
+                    <Link href={`/admin/orders/${o.id}`} className="text-sm font-medium hover:underline text-foreground">
+                      View
+                    </Link>
+                    {o.paymentStatus === 'PAID' && o.status !== 'CANCELLED' && o.status !== 'REFUNDED' && (
+                      <FulfillButton orderId={o.id} />
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -131,5 +137,51 @@ export function AdminOrdersTable({ orders, total, page, limit, status, search, s
         </div>
       )}
     </div>
+  )
+}
+
+function FulfillButton({ orderId }) {
+  const router = useRouter()
+  const [fulfilling, setFulfilling] = useState(false)
+  const [fulfilled, setFulfilled] = useState(false)
+
+  const fulfill = async () => {
+    if (!confirm('Send this order to the fulfillment provider?')) return
+    setFulfilling(true)
+    try {
+      // Try the first available provider — in practice, the admin would pick from Admin → Fulfillment
+      // This sends to whichever provider is enabled and configured
+      const r = await fetch(`/api/admin/orders/${orderId}/fulfill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'printful' })
+      })
+      if (r.ok) {
+        setFulfilled(true)
+        toast.success('Order sent for fulfillment')
+        router.refresh()
+      } else {
+        const d = await r.json()
+        throw new Error(d.error || 'Failed')
+      }
+    } catch (e) {
+      toast.error('Fulfillment failed', e.message)
+    } finally {
+      setFulfilling(false)
+    }
+  }
+
+  if (fulfilled) {
+    return <span className="text-xs text-emerald-600 font-medium">✓ Fulfilled</span>
+  }
+
+  return (
+    <button
+      onClick={fulfill}
+      disabled={fulfilling}
+      className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50"
+    >
+      {fulfilling ? 'Sending...' : 'Fulfill'}
+    </button>
   )
 }
