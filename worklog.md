@@ -136,3 +136,41 @@ Tested routes (all return 200 except protected admin which returns 307 redirect)
   package.json scripts + version, own .env + data) — extract → preserve → db:push → backfill →
   build → kill (pid file + port scan) → restart via their npm run start → health OK
 - Zip rebuilt WITHOUT .env/db/test scripts: download/shopflar.zip (v1.1.0, 442 files)
+
+## Update — 2026-10-31 (v1.2.0): COD email + dice fix, Logs page, Discord webhooks, GitHub-source updater, DB provider preservation
+
+### Critical fix — COD orders never sent any email
+- Root cause: for `paymentProvider=cod` checkout only set status PENDING; the confirmation email was only sent inside `markOrderPaid()`, which COD never triggers → COD customers got ZERO emails
+- Now the checkout COD branch sends the confirmation email at placement (best-effort); `markOrderPaid()` skips it for COD (no duplicate when cash is collected)
+
+### Free Order Dice now works for COD
+- `isDiceEligibleOrder()`: PAID orders + COD orders in an active state can roll; success page condition updated
+
+### Logs (Admin → Logs)
+- Activity tab: new `AuditLog`-backed feed — order.placed/paid/status_changed/refunded/fulfilled/deleted, stock.low (fires once on threshold crossing), email.failed, user.registered/verified/updated/deleted, product/discount created/updated/deleted, settings.updated, discord.sent/failed, dice.won — searchable, paginated (25/page), expandable metadata, auto-refresh
+- Emails tab: EmailLog with status badges, SMTP error messages, inline body preview (sandboxed iframe), filters; DELETE per tab (clear)
+
+### Discord webhook notifications (Admin → Notifications)
+- src/lib/discord.ts: settings `discord_enabled/discord_webhook_url/discord_events` (30s cache), embed per event (12-event catalog with emoji+color), 8s timeout, failures → audit log, no recursion on discord.*
+- src/lib/logs.ts: `logEvent()` = audit row + Discord fan-out (flattened metadata); fire-and-forget everywhere
+- Admin UI: enable toggle, URL validation, per-event checkboxes, Send test message
+- Config API + test endpoint; updater github API separate
+
+### Updater: pull from GitHub
+- `--github --repo owner/name --branch main` (+ GITHUB_TOKEN via env, never argv) — downloads branch zipball via GitHub API (public+private), then the normal pipeline
+- Admin → Updates: source picker (GitHub | Upload zip), repo/branch/token settings, Check for updates (latest commit card), start button for both sources
+- API: GET/POST /api/admin/updater/github (check + save), run route passes source; token travels via spawn env
+
+### Critical fix — updater no longer reverts the DB provider
+- User's `prisma/schema.prisma` datasource block (provider + url env) is captured before apply and restored after copying the new schema; tested with a simulated mysql install in /tmp (provider kept, new models applied)
+- README sections 17 (GitHub updater) + 18 (Notifications & Logs) added; dice section updated for COD
+
+### GitHub
+- Repo scrubbed and pushed: .env, db/custom.db, download/, tool-results/, updates/, *.pid untracked + gitignored; .gitattributes export-ignores dev/test scripts from archives
+- Release zip rebuilt from git archive: download/shopflar.zip (v1.2.0, 572 KB, no secrets, no dev scripts)
+
+### Tests
+- COD e2e: order placed → email logged (fails only on fake dev SMTP `smtp.test.local`) → dice rolled → order.placed + email.failed in activity log → Discord receiver got "New order placed" + "Email failed" embeds → success page renders dice
+- Updater GitHub: API check returns latest commit; real zipball dry-run (323 files) validates download+extract
+- Datasource preservation: mysql provider kept through an update; package.json untouched
+- Lint clean; prisma schema valid

@@ -80,7 +80,7 @@ export async function PUT() {
         actorId: admin.id, actorEmail: admin.email,
         entity: 'discord',
         metadata: { event: 'test', error: String(e.message).slice(0, 300) }
-      }, )
+      })
       return NextResponse.json({ error: e.message }, { status: 400 })
     }
     await logEvent('discord.test', {
