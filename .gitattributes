@@ -1,0 +1,8 @@
+# Exclude dev/test tooling from release archives (git archive / GitHub zipball)
+/scripts/test-* export-ignore
+/scripts/repro-checkout.sh export-ignore
+/scripts/smoke-admin.sh export-ignore
+/scripts/updater-e2e.sh export-ignore
+/scripts/fix-passwords.js export-ignore
+/scripts/fix-async-params.mjs export-ignore
+/tests export-ignore

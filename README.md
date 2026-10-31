@@ -398,6 +398,7 @@ Shopflar can update itself from a release zip — from the admin panel or the te
 | `package.json` | Your custom scripts (e.g. `npm run start` with your own port) stay exactly as you wrote them |
 | `.env` (all `.env*`) | Your secrets and configuration |
 | `db/`, `prisma/*.db` | Your database (schema is migrated with `db:push`, data is kept) |
+| **Your DB provider** | If you switched to MySQL/Postgres with `npm run switch-db`, the update keeps `provider = "mysql"/"postgresql"` in `prisma/schema.prisma` |
 | `public/uploads/` | Uploaded product images and files |
 | `node_modules/`, lockfiles, `.next/`, `logs/` | Build artifacts and caches |
 
@@ -405,15 +406,23 @@ New app files are added, changed files are replaced, and files removed by the ne
 
 **Option A — Admin panel (Admin → Updates)**
 
-1. Upload the new `shopflar.zip`.
-2. Pick options: **Rebuild** (run `npm run build` — needed when your start script runs `next start`), **Apply dependency updates** (refreshes dependency *versions* in your package.json if the release changed them — your scripts are never touched), **Force npm install**.
-3. Click **Start update**. The page shows a live step timeline and log, survives the server restart, and confirms when the store is back up.
+Two update sources:
+
+- **Pull from GitHub** — enter your repository (`owner/name`) and branch (default `main`), optionally an access token for private repos, then click **Update from GitHub now**. A *Check for updates* button shows the latest commit on the branch.
+- **Upload zip** — upload the new `shopflar.zip`.
+
+Then pick options: **Rebuild** (run `npm run build` — needed when your start script runs `next start`), **Apply dependency updates** (refreshes dependency *versions* in your package.json if the release changed them — your scripts are never touched), **Force npm install**.
+
+Click **Start update**. The page shows a live step timeline and log, survives the server restart, and confirms when the store is back up.
 
 **Option B — Terminal**
 
 ```bash
 # Basic: apply package, run db:push, restart with your own `npm run start`
 node scripts/updater.mjs /path/to/shopflar.zip --rebuild
+
+# Update straight from GitHub (private repos: set GITHUB_TOKEN)
+GITHUB_TOKEN=github_pat_… node scripts/updater.mjs --github --repo owner/shopflar --branch main --rebuild
 
 # Useful flags
 --no-merge-deps   # never touch package.json at all
@@ -437,9 +446,20 @@ node scripts/updater.mjs /path/to/shopflar.zip --rebuild
 
 Progress and history live in `updates/` (`state.json`, `last-update.json`, `updater-*.log`).
 
+## 18. Notifications (Discord) & Logs
+
+**Admin → Notifications** — connect a Discord webhook and get an embed in your channel for: new orders, payments received, status changes, refunds, auto-fulfillment results, new customers, email verifications, low stock, dice wins and failed emails. Every event can be toggled individually, and a *Send test message* button verifies the setup. Notification failures never break the store — they show up in the logs as `discord.failed`.
+
+**Admin → Logs** — two tabs:
+
+- **Activity** — every order, payment, status change, refund, low-stock alert, customer registration, admin change (products, discounts, users, settings), Discord delivery and more, with searchable details and pagination.
+- **Emails** — every email the store attempted, with status (sent/failed) and the exact SMTP error for failures — the first place to look when "a customer says they didn't get an email". Bodies can be previewed inline.
+
+Logs can be filtered, auto-refreshed every 15 s and cleared per tab.
+
 ---
 
-## 18. Mystery Boxes
+## 19. Mystery Boxes
 
 Any product can be turned into a mystery box (Admin → Plugins → Mystery Crates):
 
@@ -449,7 +469,7 @@ Any product can be turned into a mystery box (Admin → Plugins → Mystery Crat
 
 **Reveal experience:** the customer adds the box to the cart, pays, and the order confirmation page shows a *"Mystery box"* section — tap the wiggling box to open it and the won items pop in one by one (guaranteed items are tagged, lucky draws are tagged). Contents are decided server-side at order time (`Order.mysteryReveals`) and are also visible in Admin → Orders → order detail under *"Games & Mystery Boxes"*.
 
-## 19. Free Order Dice
+## 20. Free Order Dice
 
 A configurable post-purchase mini game (Admin → Store Settings → Free Order Dice):
 
@@ -458,7 +478,7 @@ A configurable post-purchase mini game (Admin → Store Settings → Free Order 
 - **Winners get a coupon for the order total** — a single-use `LUCKY-XXXXXX` fixed-amount discount is created automatically, shown on screen with a copy button and emailed to the customer. The payment itself is never refunded.
 - Small imprint shown under the game and in the win email: *"Doesn't refund — if you win, you get a coupon for the same price."*
 
-**Anti-cheat / correctness:** the roll happens only on the server, exactly once per order (atomic claim on `Order.diceRoll`), the result is persisted (`diceRoll`, `diceTarget`, `diceWon`, `diceCouponCode`), refreshing or replaying can't re-roll, and clients can't influence the outcome. Coupons appear in Admin → Discounts with source `dice`. Only **paid** orders with a total above zero can play.
+**Anti-cheat / correctness:** the roll happens only on the server, exactly once per order (atomic claim on `Order.diceRoll`), the result is persisted (`diceRoll`, `diceTarget`, `diceWon`, `diceCouponCode`), refreshing or replaying can't re-roll, and clients can't influence the outcome. Coupons appear in Admin → Discounts with source `dice`. Paid orders **and Cash on Delivery orders** (payment collected on delivery) with a total above zero can play.
 
 ---
 
