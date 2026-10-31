@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { getStoreSettings } from '@/lib/settings'
-import { getDiceConfig } from '@/lib/dice'
+import { getDiceConfig, isDiceEligibleOrder } from '@/lib/dice'
 import { StorefrontLayout } from '@/components/storefront/storefront-layout'
 import { MysteryReveal, DiceGame } from '@/components/storefront/order-extras'
 import { CheckCircle2, Package, Truck, ArrowRight } from 'lucide-react'
@@ -26,7 +26,7 @@ export default async function SuccessPage({ searchParams }) {
 
   let reveals = []
   try { reveals = JSON.parse(order.mysteryReveals || '[]') } catch { reveals = [] }
-  const showDice = diceConfig.enabled && order.paymentStatus === 'PAID' && order.total > 0
+  const showDice = diceConfig.enabled && order.total > 0 && isDiceEligibleOrder(order)
 
   return (
     <StorefrontLayout settings={settings} categories={categories}>

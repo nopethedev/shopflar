@@ -103,12 +103,21 @@ export async function POST(req) {
       await db.order.update({ where: { id: order.id }, data: { notes: data.notes || null } })
     }
 
-    // For COD, mark as paid immediately (in production you'd wait for actual payment)
+    // For COD, the order is placed now but paid on delivery. There is no
+    // payment webhook for COD, so the confirmation email must go out here —
+    // otherwise COD customers never receive any email at all.
     if (provider === 'cod') {
       await db.order.update({
         where: { id: order.id },
         data: { status: 'PENDING', paymentStatus: 'UNPAID' }
       })
+      // Confirmation email (best-effort — never blocks the order)
+      try {
+        const { sendOrderConfirmation } = await import('../email')
+        await sendOrderConfirmation(order)
+      } catch (e) {
+        console.error('COD confirmation email failed:', e.message)
+      }
       return NextResponse.json({
         orderId: order.id,
         orderNumber: order.orderNumber,

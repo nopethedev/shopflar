@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createSession } from '@/lib/auth'
 import { consumeVerificationToken } from '@/lib/verification'
+import { logEvent } from '@/lib/logs'
 
 export async function POST(req) {
   try {
@@ -15,6 +16,13 @@ export async function POST(req) {
         { status: 400 }
       )
     }
+    await logEvent('user.verified', {
+      actorId: user.id,
+      actorEmail: user.email,
+      entity: 'user',
+      entityId: user.id,
+      metadata: { email: user.email }
+    })
     // The visitor proved ownership of the email address — sign them in.
     await createSession(user)
     return NextResponse.json({

@@ -3,6 +3,7 @@
 
 import { db } from '../db'
 import { generateOrderNumber } from '../settings'
+import { logEvent } from '../logs'
 
 export async function calculateOrder({ items, discountCode, shippingMethodId, country, region }) {
   // 1. Resolve product prices from DB (never trust client)
@@ -293,14 +294,33 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
     // Don't fail the order if mystery crate expansion fails
   }
 
-  // Decrement inventory
+  // Decrement inventory (and raise a stock.low event when a product crosses
+  // its low-stock threshold — but only on the crossing, to avoid spam)
   for (const it of calc.items) {
     if (it.variantId) {
+      const before = await db.productVariant.findUnique({
+        where: { id: it.variantId },
+        include: { product: { select: { lowStockThreshold: true } } }
+      }).catch(() => null)
       await db.productVariant.update({
         where: { id: it.variantId },
         data: { inventoryQty: { decrement: it.quantity } }
       })
+      if (before) {
+        const remaining = before.inventoryQty - it.quantity
+        const threshold = before.product?.lowStockThreshold ?? 5
+        if (before.inventoryQty > threshold && remaining <= threshold) {
+          await logEvent('stock.low', {
+            entity: 'variant', entityId: it.variantId,
+            metadata: { product: it.name, variant: it.variantName || '—', remaining }
+          })
+        }
+      }
     } else {
+      const before = await db.product.findUnique({
+        where: { id: it.productId },
+        select: { inventoryQty: true, lowStockThreshold: true }
+      }).catch(() => null)
       await db.product.update({
         where: { id: it.productId },
         data: {
@@ -312,8 +332,29 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
       if (p && p.inventoryQty <= 0) {
         await db.product.update({ where: { id: it.productId }, data: { isOutOfStock: true } })
       }
+      if (before && p && before.inventoryQty > before.lowStockThreshold && p.inventoryQty <= before.lowStockThreshold) {
+        await logEvent('stock.low', {
+          entity: 'product', entityId: it.productId,
+          metadata: { product: it.name, remaining: p.inventoryQty }
+        })
+      }
     }
   }
+
+  // ============ Order placed event (activity log + Discord) ============
+  await logEvent('order.placed', {
+    entity: 'order',
+    entityId: order.id,
+    metadata: {
+      orderNumber: order.orderNumber,
+      total: `$${order.total.toFixed(2)}`,
+      email: order.email,
+      provider,
+      items: calc.items.map(it => ({ name: it.name, quantity: it.quantity })),
+      discountCode: calc.discountCode || null,
+      shipping: calc.shippingMethod?.name || null
+    }
+  })
 
   return order
 }
@@ -340,6 +381,18 @@ export async function markOrderPaid(orderId, provider, reference) {
     }
   })
 
+  await logEvent('order.paid', {
+    entity: 'order',
+    entityId: order.id,
+    metadata: {
+      orderNumber: order.orderNumber,
+      total: `$${order.total.toFixed(2)}`,
+      email: order.email,
+      provider,
+      reference: reference || null
+    }
+  })
+
   // ============ Digital fulfillment ============
   // For downloadable + code products, deliver via email
   try {
@@ -349,11 +402,16 @@ export async function markOrderPaid(orderId, provider, reference) {
   }
 
   // ============ Send order confirmation email ============
-  try {
-    const { sendOrderConfirmation } = await import('../email')
-    await sendOrderConfirmation(order)
-  } catch (e) {
-    console.error('Order confirmation email failed:', e.message)
+  // COD orders already received their confirmation email at placement (the
+  // checkout route sends it, since there is no payment webhook for COD) —
+  // don't send a second one when the cash is collected.
+  if (order.paymentProvider !== 'cod') {
+    try {
+      const { sendOrderConfirmation } = await import('../email')
+      await sendOrderConfirmation(order)
+    } catch (e) {
+      console.error('Order confirmation email failed:', e.message)
+    }
   }
 
   // ============ Auto-fulfillment (Printful, CJ Dropshipping, etc.) ============
@@ -362,6 +420,15 @@ export async function markOrderPaid(orderId, provider, reference) {
     const results = await autoFulfillOrder(order)
     if (results.length > 0) {
       console.log(`[FULFILLMENT] Order ${order.orderNumber}: ${results.length} provider(s) processed`)
+      await logEvent('order.fulfilled', {
+        entity: 'order',
+        entityId: order.id,
+        metadata: {
+          orderNumber: order.orderNumber,
+          providers: results.map(r => ({ name: r.provider, ok: r.success })),
+          errors: results.filter(r => !r.success).map(r => `${r.provider}: ${r.error}`).join('; ') || null
+        }
+      })
     }
   } catch (e) {
     console.error('Auto-fulfillment failed:', e.message)
@@ -458,10 +525,28 @@ async function fulfillDigitalProducts(order) {
 }
 
 export async function updateOrderStatus(orderId, status, extra = {}) {
+  const previous = await db.order.findUnique({
+    where: { id: orderId },
+    select: { status: true, orderNumber: true, email: true }
+  })
   const data = { status }
   if (status === 'SHIPPED' && extra.trackingNumber) data.trackingNumber = extra.trackingNumber
   if (extra.internalNotes) data.internalNotes = extra.internalNotes
   if (status === 'DELIVERED') data.fulfillmentStatus = 'FULFILLED'
   if (status === 'CANCELLED') data.paymentStatus = 'REFUNDED'
-  return db.order.update({ where: { id: orderId }, data })
+  const updated = await db.order.update({ where: { id: orderId }, data })
+
+  await logEvent('order.status_changed', {
+    entity: 'order',
+    entityId: orderId,
+    metadata: {
+      orderNumber: previous?.orderNumber || orderId,
+      from: previous?.status || '—',
+      to: status,
+      email: previous?.email || null,
+      trackingNumber: extra.trackingNumber || null
+    }
+  })
+
+  return updated
 }

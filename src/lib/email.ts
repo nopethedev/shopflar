@@ -4,6 +4,7 @@
 
 import nodemailer from 'nodemailer'
 import { db } from './db'
+import { logEvent } from './logs'
 
 let transporterCache = null
 let lastConfigCheck = 0
@@ -145,6 +146,13 @@ export async function sendEmail({ to, subject, html, text }) {
       data: { to, subject: truncateForLog(subject), body: truncateForLog(html || text || ''), status: 'failed', error: 'SMTP not configured' }
     }).catch((e) => console.error('[EMAIL] Failed to log:', e.message))
 
+    // Surface in Activity log + Discord — the #1 cause of "customers don't
+    // receive any emails" is SMTP that was never set up.
+    await logEvent('email.failed', {
+      entity: 'email',
+      metadata: { to, subject: truncateForLog(subject, 120), error: 'SMTP not configured — set it up in Admin → Email & SMTP' }
+    })
+
     return { success: false, error: 'SMTP not configured' }
   }
 
@@ -177,6 +185,13 @@ export async function sendEmail({ to, subject, html, text }) {
         error: truncateForLog(errorInfo.message, 500)
       }
     }).catch((e2) => console.error('[EMAIL] Failed to log error:', e2.message))
+
+    // Surface the failure in the activity log + Discord so the shop owner
+    // notices broken SMTP even without opening Admin → Logs.
+    await logEvent('email.failed', {
+      entity: 'email',
+      metadata: { to, subject: truncateForLog(subject, 120), error: truncateForLog(errorInfo.message, 300) }
+    })
 
     return { success: false, error: errorInfo.message }
   }

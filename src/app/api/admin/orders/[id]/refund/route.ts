@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { getProvider } from '@/lib/payments'
+import { logEvent } from '@/lib/logs'
 
 export async function POST(_req, { params }) {
   params = await params
   try {
-    await requireAdmin()
+    const admin = await requireAdmin()
     const order = await db.order.findUnique({ where: { id: params.id }, include: { payments: true } })
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
 
@@ -36,6 +37,17 @@ export async function POST(_req, { params }) {
     await db.order.update({
       where: { id: order.id },
       data: { status: 'REFUNDED', paymentStatus: 'REFUNDED' }
+    })
+
+    await logEvent('order.refunded', {
+      actorId: admin.id, actorEmail: admin.email,
+      entity: 'order', entityId: order.id,
+      metadata: {
+        orderNumber: order.orderNumber,
+        total: `$${order.total.toFixed(2)}`,
+        email: order.email,
+        provider: order.paymentProvider || 'cod'
+      }
     })
 
     return NextResponse.json({ ok: true })

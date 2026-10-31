@@ -16,6 +16,7 @@
 
 import { db } from './db'
 import { randomBytes } from 'crypto'
+import { logEvent } from './logs'
 
 export const DICE_IMPRINT =
   "Doesn't refund — if you win, you get a coupon for the same price."
@@ -94,12 +95,24 @@ async function sendWinEmail(order, coupon) {
   }
 }
 
+// An order can play the dice game when it's paid — or when it's a Cash on
+// Delivery order that was actually placed (payment is collected on delivery;
+// there is no payment webhook, so waiting for PAID would mean COD customers
+// never get to roll). Cancelled/failed orders never play.
+export function isDiceEligibleOrder(order) {
+  if (order.paymentStatus === 'PAID') return true
+  if (order.paymentProvider === 'cod') {
+    return ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PROCESSING', 'SHIPPED'].includes(order.status)
+  }
+  return false
+}
+
 // Roll (or fetch the already-rolled result) for an order.
 // Returns null when the order can't play (missing, unpaid, disabled, zero total).
 export async function rollDiceForOrder(orderId) {
   const order = await db.order.findUnique({ where: { id: orderId } })
   if (!order) return null
-  if (order.paymentStatus !== 'PAID') return { eligible: false, reason: 'unpaid' }
+  if (!isDiceEligibleOrder(order)) return { eligible: false, reason: 'unpaid' }
   if (!(order.total > 0)) return { eligible: false, reason: 'zero-total' }
 
   const config = await getDiceConfig()
@@ -161,6 +174,18 @@ export async function rollDiceForOrder(orderId) {
     couponCode = coupon.code
     couponValue = coupon.value
     await sendWinEmail({ ...updatedOrder, diceTarget: config.target }, coupon)
+    await logEvent('dice.won', {
+      entity: 'order',
+      entityId: order.id,
+      metadata: {
+        orderNumber: updatedOrder.orderNumber,
+        email: updatedOrder.email,
+        roll,
+        target: config.target,
+        couponCode,
+        value: `$${coupon.value.toFixed(2)}`
+      }
+    })
   }
 
   return {

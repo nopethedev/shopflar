@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { hashPassword } from '@/lib/password'
 import { createSession } from '@/lib/auth'
 import { createVerificationToken, sendVerificationEmail, isVerificationEnforced } from '@/lib/verification'
+import { logEvent } from '@/lib/logs'
 import { z } from 'zod'
 
 const signupSchema = z.object({
@@ -50,6 +51,14 @@ export async function POST(req) {
         role: 'CUSTOMER',
         profile: { create: {} }
       }
+    })
+
+    await logEvent('user.registered', {
+      actorId: user.id,
+      actorEmail: email,
+      entity: 'user',
+      entityId: user.id,
+      metadata: { email, name: name || '—' }
     })
 
     if (enforcement.enforced) {
