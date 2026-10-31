@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/password'
 import { createSession } from '@/lib/auth'
+import { isVerificationEnforced } from '@/lib/verification'
 import { z } from 'zod'
 
 const loginSchema = z.object({
@@ -24,6 +25,17 @@ export async function POST(req) {
     const ok = verifyPassword(parsed.data.password, user.passwordHash)
     if (!ok) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
+    }
+    // Anti-bot gate: unverified accounts can't sign in (when enforced).
+    const enforcement = await isVerificationEnforced()
+    if (enforcement.enforced && !user.emailVerified) {
+      return NextResponse.json(
+        {
+          error: 'Please verify your email address before signing in. Check your inbox for the verification link.',
+          code: 'EMAIL_NOT_VERIFIED'
+        },
+        { status: 403 }
+      )
     }
     await createSession(user)
     return NextResponse.json({ user: { id: user.id, email: user.email, role: user.role, name: user.name } })

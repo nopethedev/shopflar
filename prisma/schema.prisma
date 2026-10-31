@@ -31,6 +31,23 @@ model User {
   reviews        ProductReview[]
   wishlist       WishlistItem[]
   discountUsage  DiscountUsage[]
+  verificationTokens VerificationToken[]
+}
+
+// One-time tokens for email verification (and future password resets).
+// Only the SHA-256 hash of the token is stored — the raw token only ever
+// exists inside the emailed link.
+model VerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  type      String   @default("email_verify") // email_verify | password_reset
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("verification_tokens")
+  @@index([userId, type])
 }
 
 model Profile {

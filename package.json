@@ -1,6 +1,6 @@
 {
   "name": "shopflar",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev -H ${HOST:-0.0.0.0} -p ${PORT:-3000}",
@@ -14,7 +14,8 @@
     "db:seed": "node scripts/seed.js",
     "setup": "node scripts/setup.js",
     "setup:win": "node scripts/setup.js",
-    "switch-db": "node scripts/switch-db.js"
+    "switch-db": "node scripts/switch-db.js",
+    "update": "node scripts/updater.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

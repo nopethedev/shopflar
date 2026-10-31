@@ -5,6 +5,7 @@ import { getProvider } from '@/lib/payments'
 import { getSessionUser } from '@/lib/auth'
 import { hashPassword } from '@/lib/password'
 import { createSession } from '@/lib/auth'
+import { createVerificationToken, sendVerificationEmail, isVerificationEnforced } from '@/lib/verification'
 import { z } from 'zod'
 
 const checkoutSchema = z.object({
@@ -50,17 +51,28 @@ export async function POST(req) {
     if (data.createAccount && !userId && data.password && data.password.length >= 8) {
       const existing = await db.user.findUnique({ where: { email: data.email.toLowerCase().trim() } })
       if (!existing) {
+        // Anti-bot: when email verification is enforced the new account starts
+        // unverified and gets a confirmation link; the order itself continues
+        // normally (confirmation email still arrives).
+        const enforcement = await isVerificationEnforced()
         const newUser = await db.user.create({
           data: {
             email: data.email.toLowerCase().trim(),
             passwordHash: hashPassword(data.password),
             name: `${data.firstName} ${data.lastName}`,
             role: 'CUSTOMER',
-            emailVerified: new Date(),
+            emailVerified: enforcement.enforced ? null : new Date(),
             profile: { create: { firstName: data.firstName, lastName: data.lastName } }
           }
         })
-        await createSession(newUser)
+        if (enforcement.enforced) {
+          const { token } = await createVerificationToken(newUser.id)
+          if (token) {
+            await sendVerificationEmail(newUser, token).catch(() => {})
+          }
+        } else {
+          await createSession(newUser)
+        }
         userId = newUser.id
       }
     }

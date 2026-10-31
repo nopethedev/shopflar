@@ -5,15 +5,17 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { toast } from '@/lib/toast'
-import { Save, Database, RefreshCw, Trash2, Download, Upload } from 'lucide-react'
+import { Save, Database, RefreshCw, Trash2, Download, Upload, ShieldCheck } from 'lucide-react'
 
-export function AdminSystemSettings({ settings }) {
+export function AdminSystemSettings({ settings, smtpConfigured }) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     currency: settings.currency || 'USD',
-    currency_symbol: settings.currency_symbol || '$'
+    currency_symbol: settings.currency_symbol || '$',
+    require_email_verification: settings.require_email_verification !== 'false' ? 'true' : 'false'
   })
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -91,6 +93,35 @@ export function AdminSystemSettings({ settings }) {
         <Button onClick={save} disabled={saving}>
           <Save className="h-4 w-4 mr-2" />
           {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </Card>
+
+      <Card className="p-5 space-y-4">
+        <h3 className="font-semibold flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4" /> Security
+        </h3>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <Label className="font-medium">Require email verification</Label>
+            <p className="text-sm text-muted-foreground mt-1 max-w-xl">
+              New accounts must click a link in their confirmation email before they can sign in.
+              Blocks bots from mass-creating accounts. Unverified accounts can still place guest orders.
+            </p>
+            {!smtpConfigured && form.require_email_verification === 'true' && (
+              <p className="text-sm text-amber-600 mt-2">
+                ⚠ SMTP is not configured (Admin → Email &amp; SMTP), so verification links can't be
+                delivered — new accounts are verified automatically until SMTP is set up.
+              </p>
+            )}
+          </div>
+          <Switch
+            checked={form.require_email_verification === 'true'}
+            onCheckedChange={(v) => set('require_email_verification', v ? 'true' : 'false')}
+          />
+        </div>
+        <Button onClick={save} disabled={saving}>
+          <Save className="h-4 w-4 mr-2" />
+          {saving ? 'Saving...' : 'Save Security Settings'}
         </Button>
       </Card>
 

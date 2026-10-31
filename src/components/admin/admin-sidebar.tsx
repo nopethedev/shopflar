@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ShoppingCart, Package, Tags, Users,
   Percent, Mail, Truck, Receipt, CreditCard, Plug,
-  Palette, Settings, UserCog, ChevronRight, Star, FileText, Puzzle, BarChart3, Layout, Wrench
+  Palette, Settings, UserCog, ChevronRight, Star, FileText, Puzzle, BarChart3, Layout, Wrench, RefreshCw
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +56,7 @@ const sections = [
       { label: 'Legal Pages', href: '/admin/legal', icon: FileText },
       { label: 'Tracking & Embeds', href: '/admin/tracking', icon: BarChart3 },
       { label: 'Store Settings', href: '/admin/settings', icon: Settings },
+      { label: 'Updates', href: '/admin/updater', icon: RefreshCw },
       { label: 'Users & Admins', href: '/admin/users', icon: UserCog }
     ]
   }

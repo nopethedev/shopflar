@@ -362,6 +362,83 @@ Re-running the seed is safe — it uses `upsert` and skips existing records.
 
 ---
 
+## 16. Email Verification (Anti-Bot)
+
+New signups must confirm their email address before the account can be used — this keeps bots from mass-creating accounts.
+
+**How it works**
+
+1. A visitor signs up at `/signup` → the account is created **unverified** and a confirmation email with a one-time link is sent.
+2. Until the link is clicked, signing in returns *"Please verify your email address first"* with a **Resend** button (resending requires the password, so the endpoint can't be abused to spam strangers).
+3. Clicking the link (`/verify-email?token=…`) verifies the account and signs the visitor straight in.
+4. Tokens are stored hashed (SHA-256), expire after 24 h and are single-use; emails are rate-limited to one per minute.
+5. Accounts created during **checkout** also receive a verification email — the order itself is never blocked.
+6. Accounts created by an **admin** (Admin → Users & Admins) are pre-verified automatically.
+
+**Admin controls**
+
+- *Store Settings → Security → "Require email verification"* — turn the whole feature on/off.
+- *Users & Admins* — every account shows a **Verified / Unverified** badge with actions: **Resend** the verification email, **Verify** manually, or **Unverify** (blocks sign-in again).
+- The email log (Admin → Email & SMTP) shows every verification email that was sent.
+
+> **Note:** if SMTP isn't configured yet (Admin → Email & SMTP), new accounts are verified automatically instead of locking everyone out — the Store Settings page shows a warning about this. Configure SMTP to activate the gate.
+
+**Upgrading an existing store:** the first update run automatically marks all existing users as verified (`scripts/backfill-verify.mjs`), so nobody gets locked out by the new requirement.
+
+---
+
+## 17. Auto Updater
+
+Shopflar can update itself from a release zip — from the admin panel or the terminal — while **keeping everything that makes your install yours**.
+
+**Always preserved during an update**
+
+| Preserved | Why |
+| --- | --- |
+| `package.json` | Your custom scripts (e.g. `npm run start` with your own port) stay exactly as you wrote them |
+| `.env` (all `.env*`) | Your secrets and configuration |
+| `db/`, `prisma/*.db` | Your database (schema is migrated with `db:push`, data is kept) |
+| `public/uploads/` | Uploaded product images and files |
+| `node_modules/`, lockfiles, `.next/`, `logs/` | Build artifacts and caches |
+
+New app files are added, changed files are replaced, and files removed by the new release are deleted (tracked via `updates/manifest.json`).
+
+**Option A — Admin panel (Admin → Updates)**
+
+1. Upload the new `shopflar.zip`.
+2. Pick options: **Rebuild** (run `npm run build` — needed when your start script runs `next start`), **Apply dependency updates** (refreshes dependency *versions* in your package.json if the release changed them — your scripts are never touched), **Force npm install**.
+3. Click **Start update**. The page shows a live step timeline and log, survives the server restart, and confirms when the store is back up.
+
+**Option B — Terminal**
+
+```bash
+# Basic: apply package, run db:push, restart with your own `npm run start`
+node scripts/updater.mjs /path/to/shopflar.zip --rebuild
+
+# Useful flags
+--no-merge-deps   # never touch package.json at all
+--no-restart      # apply files + db:push only, you restart manually
+--npm-install     # force npm install even if dependencies didn't change
+--dry-run         # validate the package without changing anything
+```
+
+**What the updater does, in order**
+
+1. Validates the zip (pure Node — no `unzip` binary or extra packages needed)
+2. Extracts to `updates/`, skips all preserved paths
+3. Removes files that the new release deleted
+4. Merges dependency updates into your `package.json` (optional, scripts preserved)
+5. `npm install` — only when dependencies actually changed
+6. `npm run db:push` — your script, your `DATABASE_URL`
+7. One-time backfill: marks existing users email-verified (first update only)
+8. `npm run build` (optional)
+9. Stops the old server (via the PID written on boot in `updates/server.pid`, with a port-scan fallback) and starts **your** `npm run start`
+10. Waits until the server answers, then writes `updates/last-update.json`
+
+Progress and history live in `updates/` (`state.json`, `last-update.json`, `updater-*.log`).
+
+---
+
 ## Architecture Overview
 
 ```
