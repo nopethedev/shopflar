@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireSuperAdmin } from '@/lib/auth'
+import { db } from '@/lib/db'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -7,18 +8,16 @@ import { spawn } from 'node:child_process'
 const appDir = process.cwd()
 const updatesDir = path.join(appDir, 'updates')
 
-// POST /api/admin/updater/run — start applying the uploaded update package.
+// POST /api/admin/updater/run — start applying an update.
 // Spawns scripts/updater.mjs fully detached so it survives the server restart
-// it performs itself. Body: { rebuild, npmInstall, mergeDeps }
+// it performs itself.
+// Body: { source?: 'zip' | 'github', repo?, branch?, rebuild, npmInstall, mergeDeps }
+// For source=github the repo/branch/token come from store settings
+// (github_repo / github_branch / github_token) unless overridden in the body.
 export async function POST(req) {
   try {
     await requireSuperAdmin()
     const body = await req.json().catch(() => ({}))
-
-    const zipPath = path.join(updatesDir, 'pending.zip')
-    if (!fs.existsSync(zipPath)) {
-      return NextResponse.json({ error: 'No update package uploaded yet' }, { status: 400 })
-    }
 
     // Refuse to start while an update is already running
     const stateFile = path.join(updatesDir, 'state.json')
@@ -37,7 +36,32 @@ export async function POST(req) {
     fs.mkdirSync(updatesDir, { recursive: true })
     fs.copyFileSync(path.join(appDir, 'scripts', 'updater.mjs'), runnerPath)
 
-    const args = [runnerPath, 'updates/pending.zip']
+    const args = [runnerPath]
+    const childEnv = { ...process.env }
+
+    if (body.source === 'github') {
+      // Pull the update package from GitHub (main branch or configured branch)
+      const rows = await db.storeSetting.findMany({
+        where: { key: { in: ['github_repo', 'github_branch', 'github_token'] } }
+      })
+      const map = new Map(rows.map(r => [r.key, r.value]))
+      const repo = body.repo || map.get('github_repo') || ''
+      const branch = body.branch || map.get('github_branch') || 'main'
+      if (!repo) {
+        return NextResponse.json({ error: 'No GitHub repository configured. Set it under "Update from GitHub" first.' }, { status: 400 })
+      }
+      args.push('--github', '--repo', repo, '--branch', branch)
+      // Token travels via env (not argv) so it never shows up in /proc/*/cmdline
+      const token = body.token || map.get('github_token') || ''
+      if (token) childEnv.GITHUB_TOKEN = token
+    } else {
+      const zipPath = path.join(updatesDir, 'pending.zip')
+      if (!fs.existsSync(zipPath)) {
+        return NextResponse.json({ error: 'No update package uploaded yet' }, { status: 400 })
+      }
+      args.push('updates/pending.zip')
+    }
+
     if (body.rebuild) args.push('--rebuild')
     if (body.npmInstall) args.push('--npm-install')
     if (body.mergeDeps === false) args.push('--no-merge-deps')
@@ -47,7 +71,7 @@ export async function POST(req) {
       cwd: appDir,
       detached: true,
       stdio: ['ignore', out, out],
-      env: process.env
+      env: childEnv
     })
     child.unref()
 

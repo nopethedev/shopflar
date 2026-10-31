@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireSuperAdmin } from '@/lib/auth'
 import { createVerificationToken, sendVerificationEmail } from '@/lib/verification'
+import { logEvent } from '@/lib/logs'
 
 // PATCH: update role and/or email-verified status
 export async function PATCH(req, { params }) {
   params = await params
   try {
-    await requireSuperAdmin()
+    const admin = await requireSuperAdmin()
     const body = await req.json()
     const data = {}
 
@@ -31,6 +32,18 @@ export async function PATCH(req, { params }) {
     }
 
     const updated = await db.user.update({ where: { id: params.id }, data })
+
+    await logEvent('user.updated', {
+      actorId: admin.id, actorEmail: admin.email,
+      entity: 'user', entityId: params.id,
+      metadata: {
+        email: updated.email,
+        role: body.role !== undefined ? `${updated.role}` : undefined,
+        verified: body.verified !== undefined ? (body.verified ? 'yes' : 'revoked') : undefined
+      },
+      notify: false
+    })
+
     return NextResponse.json({ user: { id: updated.id, email: updated.email, role: updated.role, emailVerified: updated.emailVerified } })
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 400 })
@@ -64,8 +77,15 @@ export async function POST(_req, { params }) {
 export async function DELETE(_req, { params }) {
   params = await params
   try {
-    await requireSuperAdmin()
+    const admin = await requireSuperAdmin()
+    const user = await db.user.findUnique({ where: { id: params.id }, select: { email: true, role: true } })
     await db.user.delete({ where: { id: params.id } })
+    await logEvent('user.deleted', {
+      actorId: admin.id, actorEmail: admin.email,
+      entity: 'user', entityId: params.id,
+      metadata: { email: user?.email || params.id, role: user?.role || null },
+      notify: false
+    })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 400 })

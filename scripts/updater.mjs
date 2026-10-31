@@ -20,8 +20,15 @@
 // Usage:
 //   node scripts/updater.mjs <path/to/update.zip> [options]
 //   node scripts/updater.mjs updates/pending.zip --rebuild
+//   node scripts/updater.mjs --github --repo owner/repo --branch main --rebuild
 //
 // Options:
+//   --github          Download the update package from GitHub (main branch)
+//                     instead of using an uploaded zip. Repo/branch come from
+//                     --repo/--branch (or GITHUB_REPO/GITHUB_BRANCH env).
+//                     For private repos set the GITHUB_TOKEN env var.
+//   --repo <o/r>      GitHub repository (default from GITHUB_REPO env)
+//   --branch <name>   Branch to pull (default from GITHUB_BRANCH env, else main)
 //   --rebuild         Run `npm run build` before restarting (needed when your
 //                     start script runs a production server, i.e. `next start`)
 //   --no-rebuild      Skip the build step
@@ -51,9 +58,18 @@ const updatesDir = path.join(appDir, 'updates')
 // ---------- CLI args ----------
 const args = process.argv.slice(2)
 const has = (f) => args.includes(f)
-const zipArg = args.find(a => !a.startsWith('--'))
+const argVal = (name, envName, dflt = null) => {
+  const i = args.indexOf(name)
+  if (i >= 0 && args[i + 1] && !args[i + 1].startsWith('--')) return args[i + 1]
+  if (process.env[envName]) return process.env[envName]
+  return dflt
+}
+const zipArg = args.find(a => !a.startsWith('--') && a !== argVal('--repo', '') && a !== argVal('--branch', ''))
 const OPT = {
   zip: zipArg ? path.resolve(appDir, zipArg) : null,
+  github: has('--github'),
+  repo: argVal('--repo', 'GITHUB_REPO'),
+  branch: argVal('--branch', 'GITHUB_BRANCH', 'main'),
   rebuild: has('--rebuild'),
   noRebuild: has('--no-rebuild'),
   mergeDeps: !has('--no-merge-deps'),
@@ -184,6 +200,43 @@ function isPreserved(rel) {
   if (rel === 'logs' || rel.startsWith('logs/')) return true
   if (rel === '.server-pid') return true
   return false
+}
+
+// ---------- database provider preservation ----------
+// Users can switch the datasource to mysql/postgres with `npm run switch-db`.
+// The shipped schema.prisma defaults to sqlite — without this, every update
+// would silently revert the database provider and break the next db:push.
+function readInstalledDatasource() {
+  try {
+    const schema = fs.readFileSync(path.join(appDir, 'prisma', 'schema.prisma'), 'utf8')
+    const ds = schema.match(/datasource\s+db\s*\{[\s\S]*?\}/)?.[0] || ''
+    return {
+      provider: ds.match(/provider\s*=\s*"([^"]+)"/)?.[1] || null,
+      urlEnv: ds.match(/url\s*=\s*env\(\s*"([^"]+)"\s*\)/)?.[1] || null
+    }
+  } catch { return null }
+}
+
+// Re-apply the user's provider/url-env onto a freshly copied schema.prisma
+function restoreDatasource(destPath, datasource) {
+  if (!datasource || (!datasource.provider && !datasource.urlEnv)) return false
+  try {
+    let schema = fs.readFileSync(destPath, 'utf8')
+    const dsRe = /datasource\s+db\s*\{[\s\S]*?\}/
+    const block = schema.match(dsRe)?.[0]
+    if (!block) return false
+    let patched = block
+    if (datasource.provider) {
+      patched = patched.replace(/(provider\s*=\s*)"[^"]+"/, `$1"${datasource.provider}"`)
+    }
+    if (datasource.urlEnv) {
+      patched = patched.replace(/(url\s*=\s*env\(\s*)"[^"]+"(\s*\))/, `$1"${datasource.urlEnv}"$2`)
+    }
+    if (patched === block) return false
+    schema = schema.replace(dsRe, patched)
+    fs.writeFileSync(destPath, schema)
+    return true
+  } catch { return false }
 }
 
 // ---------- process helpers ----------
@@ -346,6 +399,47 @@ function waitForServer(port, timeoutMs = 60000) {
   })
 }
 
+// ---------- GitHub source ----------
+// Downloads the branch zipball via the GitHub API (works for public AND
+// private repos — pass GITHUB_TOKEN for private). Returns the local zip path.
+async function downloadFromGitHub() {
+  const repo = (OPT.repo || '').replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '')
+  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+    throw new Error(`Invalid GitHub repository: "${OPT.repo || '(empty)'}" — expected owner/name (see Admin → Updates)`)
+  }
+  const branch = OPT.branch || 'main'
+  const token = process.env.GITHUB_TOKEN || ''
+  step('github', `Downloading update from GitHub (${repo}@${branch})`)
+  log(`Fetching https://api.github.com/repos/${repo}/zipball/${branch}${token ? ' (with token)' : ''}`)
+
+  const res = await fetch(`https://api.github.com/repos/${repo}/zipball/${encodeURIComponent(branch)}`, {
+    headers: {
+      'User-Agent': 'Shopflar-Updater',
+      'Accept': 'application/vnd.github+json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(10 * 60 * 1000)
+  })
+  if (!res.ok) {
+    const hint = res.status === 404
+      ? ' — repository or branch not found (check owner/name and branch; for private repos a token is required)'
+      : res.status === 401
+        ? ' — token rejected by GitHub (check GITHUB_TOKEN)'
+        : ''
+    throw new Error(`GitHub download failed (HTTP ${res.status})${hint}`)
+  }
+  const buf = Buffer.from(await res.arrayBuffer())
+  if (buf.length < 1000 || buf.readUInt32LE(0) !== 0x04034b50) {
+    throw new Error('GitHub returned something that is not a zip archive')
+  }
+  const dest = path.join(updatesDir, `github-${Date.now()}.zip`)
+  fs.writeFileSync(dest, buf)
+  log(`Downloaded ${(buf.length / (1024 * 1024)).toFixed(1)} MB → ${path.relative(appDir, dest)}`)
+  step('github', `Downloading update from GitHub (${repo}@${branch})`, 'done', `${(buf.length / (1024 * 1024)).toFixed(1)} MB`)
+  return dest
+}
+
 // ---------- main ----------
 async function main() {
   writeState()
@@ -357,12 +451,17 @@ async function main() {
   // before we eventually kill this server process.
   await new Promise(r => setTimeout(r, OPT.dryRun ? 200 : 2000))
 
-  if (!OPT.zip || !fs.existsSync(OPT.zip)) {
-    throw new Error(`Update package not found: ${OPT.zip || '(none given)'}`)
+  let zipPath = OPT.zip
+  if (OPT.github) {
+    zipPath = await downloadFromGitHub()
   }
-  const zipStat = fs.statSync(OPT.zip)
+
+  if (!zipPath || !fs.existsSync(zipPath)) {
+    throw new Error(`Update package not found: ${zipPath || '(none given — pass a zip path or --github)'}`)
+  }
+  const zipStat = fs.statSync(zipPath)
   if (zipStat.size < 1000) throw new Error('Update package is too small to be valid')
-  const zipBuf = fs.readFileSync(OPT.zip)
+  const zipBuf = fs.readFileSync(zipPath)
   if (zipBuf.length < 4 || zipBuf.readUInt32LE(0) !== 0x04034b50) {
     throw new Error('File is not a zip archive')
   }
@@ -443,6 +542,9 @@ async function main() {
   try { oldManifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) } catch {}
   const oldSet = new Set(oldManifest)
 
+  // Capture the user's current DB provider BEFORE overwriting the schema
+  const userDatasource = readInstalledDatasource()
+
   const appliedRels = []
   let applied = 0, skipped = 0
   for (const e of entries) {
@@ -451,6 +553,10 @@ async function main() {
     fs.mkdirSync(path.dirname(dest), { recursive: true })
     fs.copyFileSync(path.join(extractDir, e.rel), dest)
     if (e.rel.endsWith('.sh')) { try { fs.chmodSync(dest, 0o755) } catch {} }
+    // Keep the user's database provider (mysql/postgres) on the new schema
+    if (e.rel === 'prisma/schema.prisma' && restoreDatasource(dest, userDatasource)) {
+      log(`prisma/schema.prisma: kept YOUR database provider (${userDatasource.provider || 'same'}${userDatasource.urlEnv ? `, url env ${userDatasource.urlEnv}` : ''})`)
+    }
     appliedRels.push(e.rel)
     applied++
   }

@@ -349,7 +349,7 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
       orderNumber: order.orderNumber,
       total: `$${order.total.toFixed(2)}`,
       email: order.email,
-      provider,
+      provider: paymentProvider,
       items: calc.items.map(it => ({ name: it.name, quantity: it.quantity })),
       discountCode: calc.discountCode || null,
       shipping: calc.shippingMethod?.name || null

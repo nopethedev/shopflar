@@ -52,3 +52,11 @@ prompt
 server.log
 # Skills directory
 /skills/
+# local data & secrets (never push)
+db/*.db
+db/*.db-journal
+download/
+tool-results/
+updates/
+public/uploads/
+*.pid

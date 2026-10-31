@@ -4,7 +4,8 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ShoppingCart, Package, Tags, Users,
   Percent, Mail, Truck, Receipt, CreditCard, Plug,
-  Palette, Settings, UserCog, ChevronRight, Star, FileText, Puzzle, BarChart3, Layout, Wrench, RefreshCw
+  Palette, Settings, UserCog, ChevronRight, Star, FileText, Puzzle, BarChart3, Layout, Wrench, RefreshCw,
+  Bell, ScrollText
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -52,6 +53,8 @@ const sections = [
       { label: 'Store Mode', href: '/admin/store-mode', icon: Wrench },
       { label: 'Appearance', href: '/admin/appearance', icon: Palette },
       { label: 'Email & SMTP', href: '/admin/email', icon: Mail },
+      { label: 'Notifications', href: '/admin/notifications', icon: Bell },
+      { label: 'Logs', href: '/admin/logs', icon: ScrollText },
       { label: 'Business Details', href: '/admin/business', icon: Receipt },
       { label: 'Legal Pages', href: '/admin/legal', icon: FileText },
       { label: 'Tracking & Embeds', href: '/admin/tracking', icon: BarChart3 },

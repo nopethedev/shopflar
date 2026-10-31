@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { slugify } from '@/lib/settings'
+import { logEvent } from '@/lib/logs'
 
 export async function GET() {
   await requireAdmin()
@@ -15,7 +16,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await requireAdmin()
+    const admin = await requireAdmin()
     const body = await req.json()
 
     let slug = body.slug ? slugify(body.slug) : slugify(body.name)
@@ -65,6 +66,13 @@ export async function POST(req) {
         variants: body.variants?.length ? { create: body.variants.map(v => ({ name: v.name, options: v.options, sku: v.sku, price: v.price ? Number(v.price) : null, inventoryQty: parseInt(v.inventoryQty) || 0 })) } : undefined,
         tags: body.tags?.length ? { create: body.tags.map((t) => ({ tag: t })) } : undefined
       }
+    })
+
+    await logEvent('product.created', {
+      actorId: admin.id, actorEmail: admin.email,
+      entity: 'product', entityId: product.id,
+      metadata: { name: product.name, price: `$${product.price.toFixed(2)}`, status: product.status },
+      notify: false
     })
 
     return NextResponse.json({ product })

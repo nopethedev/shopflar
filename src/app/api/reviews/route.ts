@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { logEvent } from '@/lib/logs'
 import { z } from 'zod'
 
 const reviewSchema = z.object({
@@ -34,6 +35,16 @@ export async function POST(req) {
         title: parsed.data.title || null,
         body: parsed.data.body,
         isApproved: false // requires admin approval
+      }
+    })
+
+    await logEvent('review.created', {
+      entity: 'review', entityId: review.id,
+      metadata: {
+        product: product.name,
+        rating: parsed.data.rating,
+        author: parsed.data.authorName,
+        title: parsed.data.title || null
       }
     })
 

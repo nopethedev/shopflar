@@ -113,7 +113,7 @@ export async function POST(req) {
       })
       // Confirmation email (best-effort — never blocks the order)
       try {
-        const { sendOrderConfirmation } = await import('../email')
+        const { sendOrderConfirmation } = await import('@/lib/email')
         await sendOrderConfirmation(order)
       } catch (e) {
         console.error('COD confirmation email failed:', e.message)

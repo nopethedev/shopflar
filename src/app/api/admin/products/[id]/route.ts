@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { slugify } from '@/lib/settings'
+import { logEvent } from '@/lib/logs'
 
 export async function GET(req, { params }) {
   params = await params
@@ -46,6 +47,8 @@ export async function PATCH(req, { params }) {
     // Determine if we need to set publishedAt
     const wasDraft = existing.status === 'DRAFT'
     const nowPublished = body.status === 'PUBLISHED' && wasDraft
+
+    const admin = await requireAdmin()
 
     // Update base product
     const updated = await db.product.update({
@@ -153,6 +156,18 @@ export async function PATCH(req, { params }) {
       }
     }
 
+    await logEvent('product.updated', {
+      actorId: admin.id, actorEmail: admin.email,
+      entity: 'product', entityId: params.id,
+      metadata: {
+        name: updated.name,
+        price: `$${updated.price.toFixed(2)}`,
+        status: updated.status,
+        changed: Object.keys(body).filter(k => !['images', 'variants', 'categoryIds', 'tags'].includes(k)).slice(0, 10).join(', ') || '—'
+      },
+      notify: false
+    })
+
     return NextResponse.json({ product: updated })
   } catch (e) {
     console.error('Update product error:', e)
@@ -163,8 +178,18 @@ export async function PATCH(req, { params }) {
 export async function DELETE(req, { params }) {
   params = await params
   try {
-    await requireAdmin()
+    const admin = await requireAdmin()
+    const existing = await db.product.findUnique({
+      where: { id: params.id },
+      select: { name: true, slug: true }
+    })
     await db.product.delete({ where: { id: params.id } })
+    await logEvent('product.deleted', {
+      actorId: admin.id, actorEmail: admin.email,
+      entity: 'product', entityId: params.id,
+      metadata: { name: existing?.name || params.id, slug: existing?.slug || null },
+      notify: false
+    })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 400 })

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
+import { logEvent } from '@/lib/logs'
 
 export async function GET() {
   try {
@@ -15,7 +16,7 @@ export async function GET() {
 
 export async function PATCH(req) {
   try {
-    await requireAdmin()
+    const admin = await requireAdmin()
     const body = await req.json()
     for (const [key, value] of Object.entries(body)) {
       await db.storeSetting.upsert({
@@ -24,6 +25,12 @@ export async function PATCH(req) {
         create: { key, value: String(value || '') }
       })
     }
+    await logEvent('settings.updated', {
+      actorId: admin.id, actorEmail: admin.email,
+      entity: 'settings',
+      metadata: { keys: Object.keys(body).slice(0, 15).join(', ') },
+      notify: false
+    })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 400 })
