@@ -320,6 +320,17 @@ export async function markOrderPaid(orderId, provider, reference) {
     console.error('Order confirmation email failed:', e.message)
   }
 
+  // ============ Auto-fulfillment (Printful, CJ Dropshipping, etc.) ============
+  try {
+    const { autoFulfillOrder } = await import('../fulfillment')
+    const results = await autoFulfillOrder(order)
+    if (results.length > 0) {
+      console.log(`[FULFILLMENT] Order ${order.orderNumber}: ${results.length} provider(s) processed`)
+    }
+  } catch (e) {
+    console.error('Auto-fulfillment failed:', e.message)
+  }
+
   return order
 }
 

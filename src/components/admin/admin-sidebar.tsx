@@ -42,6 +42,7 @@ const sections = [
       { label: 'Shipping', href: '/admin/shipping', icon: Truck },
       { label: 'Tax Rates', href: '/admin/tax', icon: Receipt },
       { label: 'Payments', href: '/admin/payments', icon: CreditCard },
+      { label: 'Fulfillment', href: '/admin/fulfillment', icon: Truck },
       { label: 'Printify', href: '/admin/printify', icon: Plug }
     ]
   },
