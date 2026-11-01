@@ -409,7 +409,7 @@ model NewsletterSubscriber {
   name      String?
   isActive  Boolean  @default(true)
   source    String   @default("STOREFRONT")
-  token     String   @unique @default(cuid()) // unsubscribe token
+  token     String?  @unique @default(cuid()) // unsubscribe token
   unsubscribedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

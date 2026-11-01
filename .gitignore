@@ -58,7 +58,8 @@ db/*.db-journal
 download/
 tool-results/
 updates/
-public/uploads/
+public/uploads/*
+!public/uploads/.gitkeep
 *.pid
 
 # user uploads (local only)

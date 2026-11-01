@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { sendEmail } from '@/lib/email'
@@ -33,13 +34,19 @@ export async function POST(req, { params }) {
     let failed = 0
 
     for (const recipient of batch) {
-      // Resolve the unsubscribe link from the subscriber's private token
+      // Resolve the unsubscribe link from the subscriber's private token.
+      // Legacy rows may still have a null token — generate one on the spot.
       const sub = await db.newsletterSubscriber.findUnique({
         where: { email: recipient.email },
-        select: { token: true }
+        select: { id: true, token: true }
       })
-      const unsubscribeUrl = sub
-        ? `${appUrl}/unsubscribe?token=${encodeURIComponent(sub.token)}`
+      let token = sub?.token || null
+      if (sub && !token) {
+        token = crypto.randomUUID()
+        await db.newsletterSubscriber.update({ where: { id: sub.id }, data: { token } })
+      }
+      const unsubscribeUrl = token
+        ? `${appUrl}/unsubscribe?token=${encodeURIComponent(token)}`
         : `${appUrl}/unsubscribe`
 
       const html = renderNewsletterEmail(campaign, {

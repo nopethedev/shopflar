@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { logEvent } from '@/lib/logs'
@@ -25,6 +26,19 @@ export async function POST(req, { params }) {
       if (blocks.length === 0) {
         return NextResponse.json({ error: 'Add at least one content block first' }, { status: 400 })
       }
+    }
+
+    // Backfill unsubscribe tokens for legacy subscribers (rows created
+    // before tokens existed) so every email gets a working opt-out link.
+    const tokenless = await db.newsletterSubscriber.findMany({
+      where: { isActive: true, token: null },
+      select: { id: true }
+    })
+    for (const t of tokenless) {
+      await db.newsletterSubscriber.update({
+        where: { id: t.id },
+        data: { token: crypto.randomUUID() }
+      })
     }
 
     const subscribers = await db.newsletterSubscriber.findMany({
