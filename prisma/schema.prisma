@@ -409,10 +409,49 @@ model NewsletterSubscriber {
   name      String?
   isActive  Boolean  @default(true)
   source    String   @default("STOREFRONT")
+  token     String   @unique @default(cuid()) // unsubscribe token
+  unsubscribedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("newsletter_subscribers")
+}
+
+// ============ NEWSLETTER CAMPAIGNS ============
+
+model NewsletterCampaign {
+  id              String   @id @default(cuid())
+  subject         String
+  preheader       String?  // preview text shown after the subject in inboxes
+  mode            String   @default("blocks") // blocks | image
+  blocks          String?  // JSON array of content blocks (mode=blocks)
+  imageUrl        String?  // full-width image (mode=image)
+  clickUrl        String?  // where the image links to (mode=image)
+  imageAlt        String?
+  accentColor     String   @default("#1a1a1a") // header / button color
+  status          String   @default("draft") // draft | sending | sent | partial | failed
+  totalRecipients Int      @default(0)
+  sentCount       Int      @default(0)
+  failedCount     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  sentAt          DateTime?
+  recipients      NewsletterRecipient[]
+
+  @@map("newsletter_campaigns")
+}
+
+model NewsletterRecipient {
+  id         String    @id @default(cuid())
+  campaignId String
+  email      String
+  status     String    @default("pending") // pending | sent | failed
+  error      String?
+  sentAt     DateTime?
+  campaign   NewsletterCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+  @@map("newsletter_recipients")
 }
 
 // ============ STORE SETTINGS ============

@@ -3,6 +3,7 @@ import { StoreFooter } from '@/components/storefront/store-footer'
 import { SessionProvider } from '@/components/storefront/session-provider'
 import { CookieConsentBanner } from '@/components/storefront/cookie-consent-banner'
 import { SkipLink } from '@/components/storefront/skip-link'
+import { ThemeStyle } from '@/components/storefront/theme-style'
 import { getCustomNavPages, getStoreMode } from '@/lib/settings'
 import { StoreModePage } from '@/components/storefront/store-mode-page'
 import { getSessionUser } from '@/lib/auth'
@@ -30,7 +31,8 @@ export async function StorefrontLayout({ children, settings, categories, bypassM
 
   return (
     <SessionProvider>
-      <div className="min-h-screen flex flex-col bg-background">
+      <ThemeStyle />
+      <div className="theme-root min-h-screen flex flex-col bg-background">
         <SkipLink />
         <StoreHeader settings={settings} categories={categories} customPages={customPages} />
         <main id="main-content" className="flex-1">{children}</main>

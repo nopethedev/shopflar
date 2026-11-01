@@ -137,6 +137,49 @@
   }
 }
 
+/* ===== Page builder: section design shell ===== */
+.sec-wrap {
+  padding-top: var(--sec-pt, 0px);
+  padding-bottom: var(--sec-pb, 0px);
+}
+.sec-wrap .container-ecom {
+  max-width: var(--sec-max, 80rem);
+}
+@media (max-width: 767px) {
+  .sec-wrap {
+    padding-top: calc(var(--sec-pt, 0px) * 0.6);
+    padding-bottom: calc(var(--sec-pb, 0px) * 0.6);
+  }
+}
+
+/* Hero / slideshow height + title scale (desktop & mobile overrides) */
+.sec-hero {
+  height: var(--hero-h, 60vh);
+  min-height: var(--hero-min, 380px);
+}
+.sec-hero-title {
+  font-size: var(--hero-title-size, 56px);
+}
+@media (max-width: 767px) {
+  .sec-hero {
+    height: var(--hero-h-mobile, var(--hero-h, 60vh));
+  }
+  .sec-hero-title {
+    font-size: var(--hero-title-mobile, var(--hero-title-size, 40px));
+  }
+}
+
+/* Product grid columns (desktop & mobile overrides) */
+.sec-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-cols, 4), minmax(0, 1fr));
+}
+@media (max-width: 767px) {
+  .sec-grid {
+    grid-template-columns: repeat(var(--grid-cols-mobile, 2), minmax(0, 1fr));
+  }
+}
+
 /* Hide scrollbar utility for carousels */
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

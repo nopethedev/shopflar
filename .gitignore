@@ -60,3 +60,6 @@ tool-results/
 updates/
 public/uploads/
 *.pid
+
+# user uploads (local only)
+upload/

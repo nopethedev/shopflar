@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getStoreSettings } from '@/lib/settings'
+import { getSessionUser } from '@/lib/auth'
 import { StorefrontLayout } from '@/components/storefront/storefront-layout'
 import { ProductCard } from '@/components/storefront/product-card'
 import { NewsletterForm } from '@/components/storefront/newsletter-form'
@@ -9,7 +10,17 @@ import { ArrowRight, Truck, RotateCcw, ShieldCheck, Sparkles } from 'lucide-reac
 
 export const dynamic = 'force-dynamic'
 
-export default async function HomePage() {
+export default async function HomePage({ searchParams }) {
+  const params = await searchParams
+  // Draft preview: admins can see unpublished builder changes via /?preview=1
+  let previewDrafts = false
+  if (params?.preview === '1') {
+    try {
+      const user = await getSessionUser()
+      previewDrafts = !!(user && (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'))
+    } catch { previewDrafts = false }
+  }
+
   const [settings, categories, featured, newArrivals, customSections] = await Promise.all([
     getStoreSettings(),
     db.category.findMany({
@@ -30,10 +41,21 @@ export default async function HomePage() {
       orderBy: { createdAt: 'desc' },
       take: 4
     }),
-    db.pageSection.findMany({
-      where: { pageType: 'home', isDraft: false, isDeleted: false },
-      orderBy: { sortOrder: 'asc' }
-    })
+    // Draft preview merges draftConfig and includes draft-only sections;
+    // the public page only sees published rows
+    previewDrafts
+      ? db.pageSection.findMany({
+          where: { pageType: 'home', isDeleted: false },
+          orderBy: { sortOrder: 'asc' }
+        }).then(rows => rows.map(s => ({
+          ...s,
+          config: s.draftConfig || s.config,
+          isVisible: s.isVisible
+        })))
+      : db.pageSection.findMany({
+          where: { pageType: 'home', isDraft: false, isDeleted: false },
+          orderBy: { sortOrder: 'asc' }
+        })
   ])
 
   // If custom sections exist, render those instead of the default layout

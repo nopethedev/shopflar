@@ -174,3 +174,35 @@ Tested routes (all return 200 except protected admin which returns 307 redirect)
 - Updater GitHub: API check returns latest commit; real zipball dry-run (323 files) validates download+extract
 - Datasource preservation: mysql provider kept through an update; package.json untouched
 - Lint clean; prisma schema valid
+
+## v1.3.0 — Shopify-style Page Builder + Newsletter Campaigns
+
+### Page Builder overhaul (Admin → Page Builder)
+- Layout mirrors the Shopify theme editor: section tree (left, drag reorder + blue add-section link), live preview canvas (center, device widths), inspector (right, Content + Design tabs)
+- Shopify-style selection chrome: blue ring, label chip, floating dark action toolbar (move/duplicate/hide/delete); Remove section button in inspector footer
+- 20 section types (14 existing + 6 new: slideshow, countdown, CTA banner, stats, logo cloud, contact form); searchable add-section dialog grouped by category
+- Universal design controls per section: background, text color, vertical spacing (none/sm/md/lg/xl via CSS vars in globals.css), content width (narrow/normal/wide/full), scoped Custom CSS (scopeSectionCss prefixes selectors with [data-sec="id"])
+- Shopify-style controls on hero/slideshow: overlay opacity slider (0-90%), 9-way content position (top-left…bottom-right, legacy left/center/right mapped), Height: Small/Medium/Large/Full screen, title size; product grid: desktop/mobile column counts, "view all" button
+- Responsive editing: Desktop/Mobile toggle in inspector for hero/slideshow/product-grid fields; storefront renders per-breakpoint values via CSS vars (--hero-h-mobile, --grid-cols-mobile, .sec-hero/.sec-grid media queries)
+- 8 theme presets (Minimal Mono → Noir Dark) applying appearance settings store-wide; ThemeStyle server component injects CSS vars (bg/fg/primary/muted/border derived by mixing) scoped to .theme-root in StorefrontLayout; Google Fonts link for chosen families; button radius via [data-slot=button]
+- getAppearanceSettings no longer module-cached (route handler + page bundles had separate caches → stale theme for up to 1 min); 10 tiny rows read per request instead
+- Starter templates (Starter Store / Product Launch / Editorial Brand); undo/redo for config edits (Ctrl+Z / Ctrl+Shift+Z, 50-step history); Real preview dialog iframes /?preview=1
+- Draft preview: home page accepts ?preview=1 for admins — merges draftConfig, includes draft-only sections; public page unchanged
+
+### Newsletter campaign system (Admin → Newsletter)
+- Prisma: NewsletterCampaign (subject/preheader/mode blocks|image/blocks JSON/imageUrl/clickUrl/accent/status+counts), NewsletterRecipient (per-subscriber status/error/sentAt), NewsletterSubscriber.token (unique unsubscribe token) + unsubscribedAt
+- src/lib/newsletter.ts: renderNewsletterEmail — table-based, inline-styled email HTML (store header w/ logo, blocks, footer w/ address + personalized unsubscribe link); shared by editor preview + server sender
+- Editor UI: block stack (heading/text/image/button/divider/spacer) with drag reorder + duplicate; RichTextEditor (contentEditable + execCommand toolbar: bold/italic/underline/strike/link/lists/clear/format block); Full-image mode (upload + click-through URL + alt); live preview iframe (desktop/mobile) rendering the exact email HTML; accent color, preheader
+- Sending: POST /campaigns (drafts) → /send (snapshot recipients, status sending) → /batch loop (10 recipients per call, 150ms spacing, per-recipient EmailLog + status/error) → sent/partial/failed; browser-close safe (resume from list or editor); [TEST] send to any address
+- Public /unsubscribe?token=… confirm page + POST /api/unsubscribe (token lookup, isActive=false, unsubscribedAt)
+- Subscribers tab: search, manual add + CSV import (POST /api/admin/newsletter {add:[...]}), CSV export, source badges, unsubscribed status
+- Admin page fetches store settings (name/logo/address/url) for preview + sends
+
+### Tests
+- Campaign e2e via curl: create → send start (3 seeded subscribers snapshotted) → batch processed 3, all failed "SMTP not configured" (no SMTP in sandbox) → campaign status failed w/ per-recipient errors; EmailLog rows written; [TEST] send path works
+- Unsubscribe e2e: token page 200 → POST api → isActive=false + unsubscribedAt set
+- Sections e2e: created 6 sections via API → publish → home renders sec-wrap/sec-hero/sec-grid, --hero-h/-mobile vars, rgba overlay from opacity slider, bottom-center position classes, marquee animation
+- Theme e2e: PATCH appearance → storefront CSS vars update instantly (cache fix verified); font links for Nunito/Poppins injected
+- Browser (agent-browser): builder matches Shopify layout (tree/chip/floating toolbar/overlay-opacity slider/9-way position/mobile toggle/Remove section); newsletter editor builds heading+text+button with live email preview; storefront home renders all new sections
+- Lint clean (0 errors); next build succeeds (61 pages; 4 pre-existing harmless node: import warnings from instrumentation.ts)
+- No secrets in repo; zip rebuilt from git archive (no .env/db/dev scripts)

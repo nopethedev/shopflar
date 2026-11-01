@@ -482,6 +482,32 @@ A configurable post-purchase mini game (Admin → Store Settings → Free Order 
 
 ---
 
+## 21. Page Builder & Themes (Shopify-style editor)
+
+**Admin → Page Builder** is a visual, drag-and-drop homepage editor modeled after the Shopify theme editor:
+
+- **Structure tree** (left) — every section of the homepage, drag to reorder, click to edit, plus a searchable *Add section* catalog grouped by category
+- **Live preview canvas** (center) — sections render exactly like the storefront, with Desktop / Tablet / Mobile device widths, a blue selection highlight with a label chip and a floating action toolbar (move, duplicate, hide, delete)
+- **Inspector** (right) — per-section settings with a *Content* tab and a *Design* tab (background, text color, vertical spacing, content width, scoped **Custom CSS**), plus *Remove section*
+- **20 section types** — hero, slideshow, announcement bar, product grid, image + text, marquee, text, rich text, image, video, discounts, countdown timer, CTA banner, newsletter signup, testimonials, stats, logo cloud, FAQ, contact form and custom HTML
+- **Responsive editing** — sections with device-specific behavior (hero height, grid columns, slideshow height) expose a Desktop/Mobile toggle in the inspector; storefront renders per-breakpoint values
+- **Themes** — one-click presets (Minimal Mono, Bold Street, Pastel Soft, Luxe Serif, Playful Pop, Noir Dark, Fresh Mint, Deep Ocean) that set colors, fonts, button shape and corner radius store-wide; fine-tune everything under Admin → Appearance
+- **Starter templates** — Starter Store, Product Launch and Editorial Brand fill the page with a sensible section stack in one click
+- **Draft / publish workflow** — edits auto-save as drafts with undo/redo (Ctrl+Z / Ctrl+Shift+Z); nothing goes live until *Publish*. Admins can inspect unpublished changes on the real storefront via `/?preview=1`
+
+## 22. Newsletter Campaigns
+
+**Admin → Newsletter** replaces the plain-HTML box with a full campaign system:
+
+- **Visual email editor** — stack of blocks (heading, rich text with bold/italic/links/lists, image, button, divider, spacer) with drag-to-reorder, duplicate and a live email preview that renders the exact HTML subscribers receive, in desktop and mobile widths
+- **Full-image mode** — upload one big image instead of text; the whole image becomes a click-through link to any page of the store
+- **Campaign management** — drafts, subject + preheader, accent color, per-recipient delivery tracking (pending/sent/failed with the SMTP error), resumable batched sending (never lose a send if the browser closes) and a *send test* button
+- **Bulletproof email HTML** — table-based layout, inline styles, per-store header (name or logo) and a footer with the store address and a **personalized unsubscribe link**
+- **Unsubscribe flow** — every email links to `/unsubscribe?token=…` with a one-click confirm page; unsubscribes are tracked per subscriber and respected by all future sends
+- **Subscriber management** — search, add manually, CSV import/export, source tracking (storefront vs admin)
+
+---
+
 ## Architecture Overview
 
 ```

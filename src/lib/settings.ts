@@ -48,15 +48,11 @@ export async function getStoreSettings() {
   }
 }
 
-let appearanceCache = { ts: 0, data: new Map() }
-
+// Appearance settings are tiny (a handful of rows) and must reflect changes
+// instantly across route handlers and page bundles — so no module cache here.
 export async function getAppearanceSettings() {
-  const now = Date.now()
-  if (now - appearanceCache.ts > TTL) {
-    const rows = await db.appearanceSetting.findMany()
-    appearanceCache = { ts: now, data: new Map(rows.map(r => [r.key, r.value])) }
-  }
-  const d = appearanceCache.data
+  const rows = await db.appearanceSetting.findMany()
+  const d = new Map(rows.map(r => [r.key, r.value]))
   const get = (k, def) => d.get(k) ?? def
   return {
     primaryColor: get('primary_color', '#1a1a1a'),
@@ -71,6 +67,9 @@ export async function getAppearanceSettings() {
     containerMaxWidth: get('container_max_width', '1280px')
   }
 }
+
+// Kept for API compatibility — appearance is no longer cached
+export function invalidateAppearanceCache() { /* no-op */ }
 
 export function formatPrice(amount, currency = 'USD', symbol = '$') {
   const n = Number(amount || 0)
