@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ShoppingBag, Lock, ChevronRight, CreditCard } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { COUNTRIES } from '@/lib/countries'
 import { useSession } from '@/components/storefront/session-provider'
 
 export default function CheckoutPage() {
@@ -214,13 +215,10 @@ export default function CheckoutPage() {
                   onChange={(e) => set('country', e.target.value)}
                   className="h-10 w-full px-3 rounded-md border border-input bg-background text-sm"
                 >
-                  <option value="US">United States</option>
-                  <option value="CA">Canada</option>
-                  <option value="GB">United Kingdom</option>
-                  <option value="DE">Germany</option>
-                  <option value="FR">France</option>
-                  <option value="AU">Australia</option>
-                  <option value="JP">Japan</option>
+                  <option value="">Select country…</option>
+                  {COUNTRIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                  ))}
                 </select>
               </Field>
               <div className="col-span-2">

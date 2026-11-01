@@ -78,6 +78,23 @@ function truncateForLog(text, maxLen = 5000) {
   return text.slice(0, maxLen) + '...[truncated]'
 }
 
+// Preflight check: can we actually reach and authenticate with the SMTP
+// server right now? Used before starting a newsletter send so a bad config
+// fails fast with one clear error instead of 100% failed recipients.
+export async function verifySmtp() {
+  const config = await getSmtpConfig()
+  if (!config) {
+    return { ok: false, error: 'SMTP is not configured — set it up in Admin → Email & SMTP first' }
+  }
+  try {
+    await config.transporter.verify()
+    return { ok: true }
+  } catch (e) {
+    const info = formatSmtpError(e)
+    return { ok: false, error: info.message }
+  }
+}
+
 // Format SMTP errors with helpful messages
 function formatSmtpError(error) {
   const msg = error.message || String(error)

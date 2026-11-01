@@ -138,3 +138,66 @@ export async function linkLocalProductToPrintify(productId, printifyProductId, s
     create: { productId, printifyProductId: String(printifyProductId), printifyShopId: String(shopId), lastSyncedAt: new Date() }
   })
 }
+
+// Pull fulfillment status + tracking from Printify into a local order.
+// Printify order shape: { id, status, shipments: [{ carrier, number, url, ... }] }
+export async function syncPrintifyTracking(orderId) {
+  const order = await db.order.findUnique({ where: { id: orderId } })
+  if (!order) throw new PrintifyError('Order not found', 404)
+  if (!order.printifyOrderId) throw new PrintifyError('This order is not linked to Printify', 400)
+
+  // Find which shop the order belongs to (first active shop)
+  const shop = await db.printifyShop.findFirst({ where: { isActive: true } })
+  if (!shop) throw new PrintifyError('No Printify shop connected', 400)
+
+  const pf = await printify.getOrder(shop.shopId, order.printifyOrderId)
+  const shipments = Array.isArray(pf.shipments) ? pf.shipments : []
+
+  const data = { trackingUpdatedAt: new Date() }
+  if (shipments.length) {
+    // Prefer the most recent shipment that has a tracking number
+    const s = [...shipments].reverse().find(x => x.number) || shipments[0]
+    if (s.number) {
+      data.trackingNumber = String(s.number)
+      data.trackingCarrier = s.carrier ? String(s.carrier) : 'Printify'
+      data.trackingUrl = s.url || null
+    }
+  }
+
+  // Map Printify order status -> local fulfillment
+  const pfStatus = String(pf.status || '').toLowerCase()
+  if (pfStatus === 'fulfilled' || pfStatus === 'shipped' || shipments.length > 0) {
+    if (order.fulfillmentStatus !== 'DELIVERED') data.fulfillmentStatus = 'SHIPPED'
+    if (['PAID', 'PROCESSING', 'PENDING', 'PAYMENT_PENDING'].includes(order.status)) data.status = 'SHIPPED'
+  } else if (pfStatus === 'in production' && order.fulfillmentStatus === 'UNFULFILLED') {
+    data.fulfillmentStatus = 'PROCESSING'
+  }
+
+  const updated = await db.order.update({ where: { id: orderId }, data })
+  return {
+    order: updated,
+    shipments: shipments.map(s => ({ carrier: s.carrier, number: s.number, url: s.url })),
+    printifyStatus: pf.status || pfStatus
+  }
+}
+
+// Sync every order that was pushed to Printify and isn't final yet.
+export async function syncAllPrintifyTracking() {
+  const orders = await db.order.findMany({
+    where: {
+      printifyOrderId: { not: null },
+      status: { notIn: ['DELIVERED', 'CANCELLED', 'REFUNDED', 'FAILED'] }
+    },
+    select: { id: true }
+  })
+  const results = []
+  for (const { id } of orders) {
+    try {
+      const r = await syncPrintifyTracking(id)
+      results.push({ orderId: id, ok: true, trackingNumber: r.order.trackingNumber, shipments: r.shipments.length })
+    } catch (e) {
+      results.push({ orderId: id, ok: false, error: e.message })
+    }
+  }
+  return results
+}

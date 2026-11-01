@@ -9,6 +9,12 @@ import { getStoreSettings, getAppUrl } from '@/lib/settings'
 const BATCH_SIZE = 10
 const DELAY_MS = 150 // gentle pace between individual emails
 
+// Transient SMTP failures worth one automatic retry
+function isTransient(error) {
+  const e = String(error || '')
+  return /ECONNREFUSED|ETIMEDOUT|ESOCKET|EAI_AGAIN|throttl|try again|temporar|421|451|454/i.test(e)
+}
+
 // POST /api/admin/newsletter/campaigns/[id]/batch
 // Delivers the next chunk of pending recipients. Called in a loop by the
 // admin UI which shows live progress; safe to stop and resume any time.
@@ -57,7 +63,13 @@ export async function POST(req, { params }) {
         addressText: settings.storeAddress
       })
 
-      const result = await sendEmail({ to: recipient.email, subject: campaign.subject, html })
+      // Two attempts for transient SMTP hiccups (refused connections,
+      // timeouts, throttling) — permanent errors (auth, bad address) fail fast.
+      let result = await sendEmail({ to: recipient.email, subject: campaign.subject, html })
+      if (!result.success && isTransient(result.error)) {
+        await new Promise(r => setTimeout(r, 800))
+        result = await sendEmail({ to: recipient.email, subject: campaign.subject, html })
+      }
 
       await db.newsletterRecipient.update({
         where: { id: recipient.id },

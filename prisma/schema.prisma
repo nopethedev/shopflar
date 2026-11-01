@@ -273,6 +273,9 @@ model Order {
   discountCode    String?
   shippingMethod  String?
   trackingNumber  String?
+  trackingCarrier String?   // e.g. USPS, UPS, DHL (auto-filled from Printify or set manually)
+  trackingUrl     String?   // direct carrier tracking link
+  trackingUpdatedAt DateTime? // last tracking sync time
   notes           String?
   internalNotes   String?
   billingAddress  Json?

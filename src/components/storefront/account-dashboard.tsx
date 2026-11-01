@@ -5,6 +5,7 @@ import { User, ShoppingBag, MapPin, Heart, Settings, LogOut, Package } from 'luc
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/lib/toast'
+import { resolveCarrierUrl } from '@/lib/tracking'
 
 export function AccountDashboard({ user, orders, addresses, wishlistItems }) {
   const router = useRouter()
@@ -227,6 +228,7 @@ function OrderRow({ order, expanded }) {
     REFUNDED: 'bg-rose-100 text-rose-700',
     FAILED: 'bg-rose-100 text-rose-700'
   }
+  const trackingUrl = order.trackingUrl || (order.trackingNumber ? resolveCarrierUrl(order.trackingCarrier, order.trackingNumber) : null)
   return (
     <div className="rounded-lg border border-border p-4">
       <div className="flex items-center justify-between gap-3">
@@ -241,6 +243,13 @@ function OrderRow({ order, expanded }) {
           <p className="font-semibold text-sm">${order.total.toFixed(2)}</p>
         </div>
       </div>
+      {trackingUrl && order.trackingNumber && (
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Tracking:</span>
+          <span className="font-mono">{order.trackingNumber}</span>
+          <a href={trackingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">Track package ↗</a>
+        </div>
+      )}
       {expanded && order.items && (
         <div className="mt-3 pt-3 border-t border-border space-y-2">
           {order.items.map(it => (

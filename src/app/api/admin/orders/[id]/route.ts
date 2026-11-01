@@ -11,6 +11,7 @@ export async function PATCH(req, { params }) {
     const data = {}
     if (body.status) data.status = body.status
     if (body.trackingNumber !== undefined) data.trackingNumber = body.trackingNumber || null
+    if (body.trackingCarrier !== undefined) data.trackingCarrier = body.trackingCarrier || null
     if (body.internalNotes !== undefined) data.internalNotes = body.internalNotes || null
     if (body.status === 'SHIPPED' && body.trackingNumber) data.fulfillmentStatus = 'FULFILLED'
     if (body.status === 'DELIVERED') data.fulfillmentStatus = 'FULFILLED'

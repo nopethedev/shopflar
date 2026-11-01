@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from '@/lib/toast'
+import { COUNTRIES } from '@/lib/countries'
 import { Save, Building2, Shield, Scroll, Globe } from 'lucide-react'
 
 export function AdminBusinessForm({ initial }) {
@@ -104,7 +105,7 @@ export function AdminBusinessForm({ initial }) {
               <div><Label className="text-xs">City</Label><Input value={form.city} onChange={(e) => set('city', e.target.value)} /></div>
               <div><Label className="text-xs">State / Province</Label><Input value={form.state} onChange={(e) => set('state', e.target.value)} /></div>
               <div><Label className="text-xs">Postal Code</Label><Input value={form.postalCode} onChange={(e) => set('postalCode', e.target.value)} /></div>
-              <div><Label className="text-xs">Country</Label><Input value={form.country} onChange={(e) => set('country', e.target.value)} placeholder="United States" /></div>
+              <div><Label className="text-xs">Country</Label><select value={form.country || ''} onChange={(e) => set('country', e.target.value)} className="h-9 w-full px-2 rounded-md border border-input bg-background text-sm"><option value="">Select country…</option>{COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}</select></div>
             </div>
           </div>
 

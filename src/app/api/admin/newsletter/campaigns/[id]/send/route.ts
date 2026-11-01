@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { logEvent } from '@/lib/logs'
+import { verifySmtp } from '@/lib/email'
 
 // POST /api/admin/newsletter/campaigns/[id]/send
 // Starts (or resumes) a send: snapshots the active subscriber list into
@@ -26,6 +27,13 @@ export async function POST(req, { params }) {
       if (blocks.length === 0) {
         return NextResponse.json({ error: 'Add at least one content block first' }, { status: 400 })
       }
+    }
+
+    // SMTP preflight: fail fast with one clear, actionable error instead of
+    // silently failing every recipient in the batch loop.
+    const smtp = await verifySmtp()
+    if (!smtp.ok) {
+      return NextResponse.json({ error: `Cannot start sending: ${smtp.error}` }, { status: 400 })
     }
 
     // Backfill unsubscribe tokens for legacy subscribers (rows created

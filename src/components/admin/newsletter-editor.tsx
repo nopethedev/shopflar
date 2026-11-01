@@ -160,8 +160,22 @@ export function NewsletterEditor({ campaign: initial, subscriberCount, store, on
         remaining: bd.remaining, total: bd.total || total
       })
       if (bd.done) {
-        setSendDialog(d => d && { ...d, phase: 'done' })
-        toast.success('Newsletter sent', `${bd.sentCount} delivered${bd.failedCount ? `, ${bd.failedCount} failed` : ''}`)
+        // Surface which recipients failed and why, so problems are actionable
+        let failures = []
+        if (bd.failedCount > 0) {
+          try {
+            const dr = await fetch(`/api/admin/newsletter/campaigns/${id}`)
+            const dd = await dr.json()
+            failures = (dd.recipientsSample || []).filter(r => r.status === 'failed')
+              .slice(0, 5).map(r => ({ email: r.email, error: r.error }))
+          } catch {}
+        }
+        setSendDialog(d => d && { ...d, phase: 'done', failures })
+        if (bd.failedCount > 0) {
+          toast.error('Finished with failures', `${bd.sentCount} delivered, ${bd.failedCount} failed — details in the dialog`)
+        } else {
+          toast.success('Newsletter sent', `${bd.sentCount} delivered`)
+        }
         onSaved?.()
         return
       }
@@ -429,6 +443,16 @@ export function NewsletterEditor({ campaign: initial, subscriberCount, store, on
               {sendDialog.phase === 'done' && (
                 <div className="space-y-3 text-sm">
                   <p>{sendDialog.sent} emails delivered{sendDialog.failed ? `, ${sendDialog.failed} failed` : ''}.</p>
+                  {sendDialog.failures?.length > 0 && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-1.5">
+                      <p className="text-xs font-semibold text-amber-800">Failed recipients:</p>
+                      {sendDialog.failures.map(f => (
+                        <div key={f.email} className="text-xs text-amber-800">
+                          <span className="font-mono">{f.email}</span> — {f.error || 'unknown error'}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <Button size="sm" onClick={() => setSendDialog(null)}>Done</Button>
                 </div>
               )}

@@ -83,6 +83,14 @@ export class PrintifyClient {
       body: JSON.stringify(orderPayload)
     })
   }
+
+  async getOrder(shopId, orderId) {
+    return this.request(`/shops/${shopId}/orders/${orderId}.json`)
+  }
+
+  async listOrderShipments(shopId, orderId) {
+    return this.request(`/shops/${shopId}/orders/${orderId}/shipments.json`)
+  }
 }
 
 export const printify = new PrintifyClient()

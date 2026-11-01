@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { resolveCarrierUrl } from '@/lib/tracking'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AdminOrderActions } from '@/components/admin/admin-order-actions'
@@ -21,6 +22,8 @@ export default async function AdminOrderDetailPage({ params }) {
   })
 
   if (!order) notFound()
+
+  const trackingUrl = order.trackingUrl || (order.trackingNumber ? resolveCarrierUrl(order.trackingCarrier, order.trackingNumber) : null)
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -175,7 +178,13 @@ export default async function AdminOrderDetailPage({ params }) {
               <h2 className="font-semibold mb-2">Shipping Method</h2>
               <p className="text-sm">{order.shippingMethod}</p>
               {order.trackingNumber && (
-                <p className="text-xs text-muted-foreground mt-1">Tracking: <span className="font-mono">{order.trackingNumber}</span></p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Tracking: <span className="font-mono">{order.trackingNumber}</span>
+                  {order.trackingCarrier ? ` · ${order.trackingCarrier}` : ''}
+                  {trackingUrl && (
+                    <> · <a href={trackingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Track package ↗</a></>
+                  )}
+                </p>
               )}
             </div>
           )}

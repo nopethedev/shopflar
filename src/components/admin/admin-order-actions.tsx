@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from '@/lib/toast'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, RefreshCw, ExternalLink } from 'lucide-react'
+import { carrierNames, resolveCarrierUrl } from '@/lib/tracking'
 
 const STATUSES = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REFUNDED', 'FAILED']
 
@@ -15,8 +16,10 @@ export function AdminOrderActions({ order }) {
   const router = useRouter()
   const [status, setStatus] = useState(order.status)
   const [trackingNumber, setTrackingNumber] = useState(order.trackingNumber || '')
+  const [trackingCarrier, setTrackingCarrier] = useState(order.trackingCarrier || '')
   const [internalNotes, setInternalNotes] = useState(order.internalNotes || '')
   const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   const save = async () => {
     setSaving(true)
@@ -24,7 +27,7 @@ export function AdminOrderActions({ order }) {
       const r = await fetch(`/api/admin/orders/${order.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, trackingNumber, internalNotes })
+        body: JSON.stringify({ status, trackingNumber, trackingCarrier, internalNotes })
       })
       if (!r.ok) throw new Error('Failed to update')
       toast.success('Order updated')
@@ -33,6 +36,28 @@ export function AdminOrderActions({ order }) {
       toast.error('Update failed', e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Pull fulfillment status + tracking number straight from Printify
+  const syncPrintify = async () => {
+    setSyncing(true)
+    try {
+      const r = await fetch(`/api/admin/orders/${order.id}/sync-tracking`, { method: 'POST' })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Sync failed')
+      if (d.trackingNumber) {
+        setTrackingNumber(d.trackingNumber)
+        if (d.trackingCarrier) setTrackingCarrier(d.trackingCarrier)
+        toast.success('Tracking synced from Printify', `${d.trackingCarrier || 'Carrier'} · ${d.trackingNumber}`)
+      } else {
+        toast.info('No tracking yet', `Printify status: ${d.printifyStatus || 'unknown'} — try again once it ships.`)
+      }
+      router.refresh()
+    } catch (e) {
+      toast.error('Sync failed', e.message)
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -53,6 +78,8 @@ export function AdminOrderActions({ order }) {
     }
   }
 
+  const previewUrl = trackingNumber ? resolveCarrierUrl(trackingCarrier, trackingNumber) : null
+
   return (
     <div className="rounded-xl border border-border bg-background p-5 space-y-3">
       <h2 className="font-semibold">Order Actions</h2>
@@ -69,9 +96,34 @@ export function AdminOrderActions({ order }) {
         </Select>
       </div>
 
-      <div>
+      <div className="space-y-2">
         <Label className="text-xs">Tracking Number</Label>
-        <Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="e.g., 1Z999AA..." />
+        <div className="flex gap-2">
+          <Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="e.g., 1Z999AA..." />
+          {order.printifyOrderId && (
+            <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={syncPrintify} disabled={syncing} title="Pull tracking from Printify">
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              Sync
+            </Button>
+          )}
+        </div>
+        <div>
+          <Label className="text-xs">Carrier</Label>
+          <Select value={trackingCarrier || 'none'} onValueChange={v => setTrackingCarrier(v === 'none' ? '' : v)}>
+            <SelectTrigger><SelectValue placeholder="Auto-detect / pick carrier" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Auto-detect from number</SelectItem>
+              {carrierNames().map(c => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {previewUrl && (
+          <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
+            <ExternalLink className="h-3 w-3" /> Preview tracking link
+          </a>
+        )}
       </div>
 
       <div>
