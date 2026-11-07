@@ -4,34 +4,47 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import {
   Download, Search, Trash2, Mail, Send, Plus, FileUp, Loader2,
-  Pencil, PlayCircle, Clock, CircleCheck, CircleX, CircleAlert, PenLine
+  Pencil, PlayCircle, Clock, CircleCheck, CircleX, CircleAlert, PenLine,
+  Megaphone, Users, TrendingUp, MoreHorizontal
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { NewsletterEditor } from './newsletter-editor'
+import { cn } from '@/lib/utils'
 
-const STATUS_META = {
-  draft: { label: 'Draft', icon: PenLine, cls: 'bg-muted text-muted-foreground' },
-  sending: { label: 'Sending', icon: Clock, cls: 'bg-blue-100 text-blue-700' },
-  sent: { label: 'Sent', icon: CircleCheck, cls: 'bg-emerald-100 text-emerald-700' },
-  partial: { label: 'Partial', icon: CircleAlert, cls: 'bg-amber-100 text-amber-700' },
-  failed: { label: 'Failed', icon: CircleX, cls: 'bg-red-100 text-red-700' }
+const STATUS_META: Record<string, { label: string; icon: any; cls: string }> = {
+  draft: { label: 'Draft', icon: PenLine, cls: 'sf-badge-neutral' },
+  sending: { label: 'Sending', icon: Clock, cls: 'sf-badge-info' },
+  sent: { label: 'Sent', icon: CircleCheck, cls: 'sf-badge-success' },
+  partial: { label: 'Partial', icon: CircleAlert, cls: 'sf-badge-warning' },
+  failed: { label: 'Failed', icon: CircleX, cls: 'sf-badge-danger' }
 }
+
+const FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'draft', label: 'Drafts' },
+  { id: 'sending', label: 'Sending' },
+  { id: 'sent', label: 'Sent' },
+  { id: 'failed', label: 'Failed' }
+]
 
 export function AdminNewsletterManager({ subscribers, store }) {
   const router = useRouter()
-  const [view, setView] = useState('list') // list | editor
-  const [editing, setEditing] = useState(null) // campaign object or {} for new
+  const [view, setView] = useState('list')
+  const [editing, setEditing] = useState(null)
   const [campaigns, setCampaigns] = useState([])
   const [campaignsLoading, setCampaignsLoading] = useState(true)
   const [resumingId, setResumingId] = useState(null)
+  const [filter, setFilter] = useState('all')
 
   const activeCount = subscribers.filter(s => s.isActive).length
+  const delivered = campaigns.reduce((s, c) => s + (c.sentCount || 0), 0)
+  const failed = campaigns.reduce((s, c) => s + (c.failedCount || 0), 0)
+  const sentCampaigns = campaigns.filter(c => c.status === 'sent').length
 
   const loadCampaigns = async () => {
     try {
@@ -57,62 +70,7 @@ export function AdminNewsletterManager({ subscribers, store }) {
     if (r.ok) { toast.success('Campaign deleted'); loadCampaigns() }
   }
 
-  if (view === 'editor') {
-    return (
-      <NewsletterEditor
-        campaign={editing || {}}
-        subscriberCount={activeCount}
-        store={store}
-        onBack={() => { setEditing(null); setView('list'); loadCampaigns() }}
-        onSaved={loadCampaigns}
-      />
-    )
-  }
-
-  return (
-    <Tabs defaultValue="campaigns">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <TabsList>
-          <TabsTrigger value="campaigns">Campaigns ({campaigns.length})</TabsTrigger>
-          <TabsTrigger value="subscribers">Subscribers ({subscribers.length})</TabsTrigger>
-        </TabsList>
-        <Button onClick={() => { setEditing({}); setView('editor') }}>
-          <Plus className="h-4 w-4 mr-1.5" /> New campaign
-        </Button>
-      </div>
-
-      {/* ===== CAMPAIGNS ===== */}
-      <TabsContent value="campaigns" className="mt-4">
-        {campaignsLoading ? (
-          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-        ) : campaigns.length === 0 ? (
-          <Card className="p-12 text-center">
-            <Mail className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-            <h3 className="font-semibold">No campaigns yet</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
-              Create a beautiful newsletter with the visual editor — text, images and buttons —
-              or send a single full-width image that links to your store.
-            </p>
-            <Button className="mt-5" onClick={() => { setEditing({}); setView('editor') }}>
-              <Plus className="h-4 w-4 mr-1.5" /> Create your first campaign
-            </Button>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {campaigns.map(c => <CampaignRow key={c.id} c={c} onEdit={() => editCampaign(c.id)} onDelete={() => delCampaign(c.id)} onResume={() => resume(c.id)} resuming={resumingId === c.id} />)}
-          </div>
-        )}
-      </TabsContent>
-
-      {/* ===== SUBSCRIBERS ===== */}
-      <TabsContent value="subscribers" className="mt-4">
-        <SubscribersTab subscribers={subscribers} router={router} activeCount={activeCount} />
-      </TabsContent>
-    </Tabs>
-  )
-
-  // Resume an interrupted send without opening the editor
-  async function resume(id) {
+  const resume = async (id) => {
     setResumingId(id)
     try {
       const sr = await fetch(`/api/admin/newsletter/campaigns/${id}/send`, { method: 'POST' })
@@ -133,52 +91,176 @@ export function AdminNewsletterManager({ subscribers, store }) {
       setResumingId(null)
     }
   }
-}
 
-function CampaignRow({ c, onEdit, onDelete, onResume, resuming }) {
-  const meta = STATUS_META[c.status] || STATUS_META.draft
-  const Icon = meta.icon
-  const processed = c.sentCount + c.failedCount
-  const pct = c.totalRecipients ? Math.round((processed / c.totalRecipients) * 100) : 0
-  const needsAttention = (c.status === 'sending' && c.pendingCount > 0)
+  if (view === 'editor') {
+    return (
+      <NewsletterEditor
+        campaign={editing || {}}
+        subscriberCount={activeCount}
+        store={store}
+        onBack={() => { setEditing(null); setView('list'); loadCampaigns() }}
+        onSaved={loadCampaigns}
+      />
+    )
+  }
+
+  const visible = filter === 'all' ? campaigns : campaigns.filter(c => c.status === filter)
 
   return (
-    <div className="rounded-xl border border-border bg-background p-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-semibold truncate">{c.subject}</p>
-            <Badge className={`${meta.cls} gap-1 text-[10px] hover:${meta.cls}`}><Icon className="h-3 w-3" /> {meta.label}</Badge>
-            <Badge variant="outline" className="text-[10px]">{c.mode === 'image' ? 'Full image' : 'Blocks'}</Badge>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {c.mode === 'image' && c.imageUrl ? c.imageUrl.split('/').pop() + ' · ' : ''}
-            {c.preheader || 'No preheader'}
-          </p>
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="sf-card p-4">
+          <p className="text-[12px] text-[#616161] flex items-center gap-1.5"><Users className="h-3 w-3" /> Subscribers</p>
+          <p className="text-[22px] font-semibold mt-1">{subscribers.length}</p>
+          <p className="text-[11px] text-[#8a8a8a]">{activeCount} active</p>
         </div>
-        <div className="flex items-center gap-1.5">
-          {needsAttention && (
-            <Button size="sm" variant="outline" onClick={onResume} disabled={resuming}>
-              {resuming ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5 mr-1.5" />}
-              Resume ({c.pendingCount} left)
-            </Button>
-          )}
-          {(c.status === 'draft' || c.status === 'failed' || (c.status === 'partial')) && (
-            <Button size="sm" variant="outline" onClick={onEdit}><Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit</Button>
-          )}
-          <button onClick={onDelete} className="p-2 rounded-md hover:bg-muted text-muted-foreground hover:text-destructive" title="Delete"><Trash2 className="h-4 w-4" /></button>
+        <div className="sf-card p-4">
+          <p className="text-[12px] text-[#616161] flex items-center gap-1.5"><Megaphone className="h-3 w-3" /> Campaigns sent</p>
+          <p className="text-[22px] font-semibold mt-1">{sentCampaigns}</p>
+          <p className="text-[11px] text-[#8a8a8a]">{campaigns.length} total</p>
+        </div>
+        <div className="sf-card p-4">
+          <p className="text-[12px] text-[#616161] flex items-center gap-1.5"><Send className="h-3 w-3" /> Emails delivered</p>
+          <p className="text-[22px] font-semibold mt-1">{delivered}</p>
+          <p className="text-[11px] text-[#8a8a8a]">{failed} failed</p>
+        </div>
+        <div className="sf-card p-4">
+          <p className="text-[12px] text-[#616161] flex items-center gap-1.5"><TrendingUp className="h-3 w-3" /> Delivery rate</p>
+          <p className="text-[22px] font-semibold mt-1">
+            {delivered + failed > 0 ? `${Math.round((delivered / (delivered + failed)) * 100)}%` : '—'}
+          </p>
+          <p className="text-[11px] text-[#8a8a8a]">Across all campaigns</p>
         </div>
       </div>
 
-      {c.totalRecipients > 0 && (
-        <div className="mt-3 space-y-1.5">
-          <Progress value={pct} className="h-1.5" />
-          <div className="flex justify-between text-[11px] text-muted-foreground">
-            <span>{c.sentCount} sent · {c.failedCount} failed · {c.pendingCount} pending</span>
-            <span>{c.status === 'sent' ? `completed ${c.sentAt ? new Date(c.sentAt).toLocaleString() : ''}` : `${pct}%`}</span>
-          </div>
+      <Tabs defaultValue="campaigns">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <TabsList className="bg-white border border-[#e3e3e3]">
+            <TabsTrigger value="campaigns">Campaigns ({campaigns.length})</TabsTrigger>
+            <TabsTrigger value="subscribers">Subscribers ({subscribers.length})</TabsTrigger>
+          </TabsList>
+          <Button onClick={() => { setEditing({}); setView('editor') }} className="bg-[#1a1a1a] hover:bg-[#303030]">
+            <Plus className="h-4 w-4 mr-1.5" /> Create campaign
+          </Button>
         </div>
-      )}
+
+        <TabsContent value="campaigns" className="mt-4 space-y-3">
+          <div className="flex items-center gap-1 flex-wrap">
+            {FILTERS.map(f => {
+              const count = f.id === 'all' ? campaigns.length : campaigns.filter(c => c.status === f.id).length
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={cn(
+                    'h-7 px-2.5 rounded-lg text-[12px] font-medium border',
+                    filter === f.id ? 'bg-[#1a1a1a] text-white border-[#1a1a1a]' : 'bg-white border-[#d9d9d9] text-[#303030] hover:bg-[#fafafa]'
+                  )}
+                >
+                  {f.label} <span className="opacity-60">({count})</span>
+                </button>
+              )
+            })}
+          </div>
+
+          {campaignsLoading ? (
+            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : campaigns.length === 0 ? (
+            <Card className="p-12 text-center">
+              <Mail className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+              <h3 className="font-semibold">No campaigns yet</h3>
+              <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+                Create a newsletter with the visual editor — text, images and buttons — or send one full-width image that links to your store.
+              </p>
+              <Button className="mt-5 bg-[#1a1a1a] hover:bg-[#303030]" onClick={() => { setEditing({}); setView('editor') }}>
+                <Plus className="h-4 w-4 mr-1.5" /> Create your first campaign
+              </Button>
+            </Card>
+          ) : visible.length === 0 ? (
+            <div className="sf-card p-10 text-center text-[13px] text-[#616161]">No campaigns in this state.</div>
+          ) : (
+            <div className="sf-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="sf-table">
+                  <thead>
+                    <tr>
+                      <th>Campaign</th>
+                      <th>Status</th>
+                      <th className="text-right">Recipients</th>
+                      <th className="text-right">Delivered</th>
+                      <th className="text-right">Failed</th>
+                      <th>Date</th>
+                      <th className="w-24"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map(c => {
+                      const meta = STATUS_META[c.status] || STATUS_META.draft
+                      const Icon = meta.icon
+                      const needsAttention = c.status === 'sending' && c.pendingCount > 0
+                      return (
+                        <tr key={c.id}>
+                          <td className="max-w-[320px]">
+                            <button onClick={() => editCampaign(c.id)} className="text-left group">
+                              <span className="block text-[13px] font-medium text-[#1a1a1a] group-hover:underline truncate">{c.subject || 'Untitled campaign'}</span>
+                              <span className="block text-[11px] text-[#8a8a8a] truncate">{c.preheader || 'No preview text'}</span>
+                            </button>
+                          </td>
+                          <td>
+                            <span className={cn('sf-badge gap-1', meta.cls)}><Icon className="h-3 w-3" /> {meta.label}</span>
+                          </td>
+                          <td className="text-right text-[12px]">{c.totalRecipients || 0}</td>
+                          <td className="text-right text-[12px]">{c.sentCount || 0}</td>
+                          <td className="text-right text-[12px]">{c.failedCount || 0}</td>
+                          <td className="text-[12px] text-[#616161] whitespace-nowrap">
+                            {c.sentAt ? new Date(c.sentAt).toLocaleDateString() : new Date(c.createdAt).toLocaleDateString()}
+                          </td>
+                          <td>
+                            <div className="flex items-center justify-end gap-1">
+                              {needsAttention && (
+                                <button onClick={() => resume(c.id)} disabled={resumingId === c.id} className="sf-btn sf-btn-secondary h-7 px-2 text-[11px]" title="Resume send">
+                                  {resumingId === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />} Resume
+                                </button>
+                              )}
+                              <button onClick={() => editCampaign(c.id)} className="p-1.5 rounded-md hover:bg-[#f1f1f1] text-[#616161]" title="Open campaign">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button onClick={() => delCampaign(c.id)} className="p-1.5 rounded-md hover:bg-[#f1f1f1] text-[#616161] hover:text-[#8e1f16]" title="Delete campaign">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {visible.some(c => c.totalRecipients > 0) && (
+                <div className="p-3 border-t border-[#e3e3e3] space-y-2">
+                  {visible.filter(c => c.status === 'sending').map(c => {
+                    const pct = c.totalRecipients ? Math.round(((c.sentCount + c.failedCount) / c.totalRecipients) * 100) : 0
+                    return (
+                      <div key={c.id} className="space-y-1">
+                        <div className="flex justify-between text-[11px] text-[#616161]">
+                          <span className="truncate">{c.subject} — sending</span>
+                          <span>{pct}%</span>
+                        </div>
+                        <Progress value={pct} className="h-1.5" />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="subscribers" className="mt-4">
+          <SubscribersTab subscribers={subscribers} router={router} activeCount={activeCount} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
@@ -245,7 +327,6 @@ function SubscribersTab({ subscribers, router, activeCount }) {
   const importCsv = async (file) => {
     if (!file) return
     const text = await file.text()
-    // Take the first column (email) and skip the header row if present
     const lines = text.split(/\r?\n/).filter(Boolean)
     const emails = parseEmails(lines.join('\n'))
     if (emails.length === 0) { toast.error('No valid emails found in that CSV'); return }
@@ -300,7 +381,7 @@ function SubscribersTab({ subscribers, router, activeCount }) {
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={addSubscribers} disabled={adding || !newEmails.trim()}>
+            <Button size="sm" onClick={addSubscribers} disabled={adding || !newEmails.trim()} className="bg-[#1a1a1a] hover:bg-[#303030]">
               {adding ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1.5" />} Add subscribers
             </Button>
             <p className="text-xs text-muted-foreground">{parseEmails(newEmails).length} valid address(es)</p>
@@ -308,43 +389,45 @@ function SubscribersTab({ subscribers, router, activeCount }) {
         </Card>
       )}
 
-      <div className="rounded-xl border border-border bg-background overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
-            <tr>
-              <th className="text-left p-3 font-medium">Email</th>
-              <th className="text-left p-3 font-medium">Name</th>
-              <th className="text-left p-3 font-medium">Source</th>
-              <th className="text-left p-3 font-medium">Subscribed</th>
-              <th className="text-left p-3 font-medium">Status</th>
-              <th className="w-10 p-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {filtered.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">
-                <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                No subscribers yet.
-              </td></tr>
-            ) : filtered.map(s => (
-              <tr key={s.id}>
-                <td className="p-3 font-medium">{s.email}</td>
-                <td className="p-3 text-muted-foreground">{s.name || '—'}</td>
-                <td className="p-3"><Badge variant="outline">{s.source}</Badge></td>
-                <td className="p-3 text-muted-foreground text-xs">
-                  {new Date(s.createdAt).toLocaleDateString()}
-                  {s.unsubscribedAt && <span className="block text-[10px]">unsub {new Date(s.unsubscribedAt).toLocaleDateString()}</span>}
-                </td>
-                <td className="p-3"><Badge variant={s.isActive ? 'default' : 'secondary'}>{s.isActive ? 'Active' : 'Unsubscribed'}</Badge></td>
-                <td className="p-3">
-                  <button onClick={() => del(s.id)} className="text-muted-foreground hover:text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
+      <div className="sf-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="sf-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Source</th>
+                <th>Subscribed</th>
+                <th>Status</th>
+                <th className="w-10"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">
+                  <Mail className="h-7 w-7 mx-auto mb-2 opacity-40" />
+                  No subscribers yet.
+                </td></tr>
+              ) : filtered.map(s => (
+                <tr key={s.id}>
+                  <td className="font-medium">{s.email}</td>
+                  <td className="text-muted-foreground">{s.name || '—'}</td>
+                  <td><span className="sf-badge sf-badge-neutral capitalize">{s.source.toLowerCase()}</span></td>
+                  <td className="text-muted-foreground text-xs">
+                    {new Date(s.createdAt).toLocaleDateString()}
+                    {s.unsubscribedAt && <span className="block text-[10px]">unsubscribed {new Date(s.unsubscribedAt).toLocaleDateString()}</span>}
+                  </td>
+                  <td><span className={cn('sf-badge', s.isActive ? 'sf-badge-success' : 'sf-badge-neutral')}>{s.isActive ? 'Active' : 'Unsubscribed'}</span></td>
+                  <td>
+                    <button onClick={() => del(s.id)} className="text-muted-foreground hover:text-destructive">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
       <p className="text-xs text-muted-foreground">{activeCount} of {subscribers.length} subscribers will receive new campaigns.</p>
     </div>

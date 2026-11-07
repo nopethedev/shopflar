@@ -12,11 +12,12 @@ export default async function AdminNewsletterPage() {
   ])
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Newsletter</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Design campaigns with the visual editor and send them to your subscribers.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-[#8a8a8a]">Marketing</p>
+          <h1 className="text-[22px] font-semibold tracking-tight text-[#1a1a1a]">Campaigns</h1>
+          <p className="sf-sub mt-0.5">Design, send and track email campaigns to your subscribers.</p>
+        </div>
       </div>
       <AdminNewsletterManager
         subscribers={subscribers}

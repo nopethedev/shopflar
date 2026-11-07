@@ -25,13 +25,15 @@ export default async function AdminLayout({ children }) {
   const storeName = settingsMap.get('store_name') || 'Shopflar'
 
   return (
-    <div className="min-h-screen bg-muted/20">
-      <AdminHeader user={user} storeName={storeName} />
-      <div className="flex">
-        <AdminSidebar user={user} />
-        <main className="flex-1 min-w-0 p-4 md:p-6 lg:p-8">
-          {children}
-        </main>
+    <div className="admin-shell min-h-screen bg-[#f1f1f1] text-[#303030]">
+      <div className="flex items-stretch">
+        <AdminSidebar user={user} storeName={storeName} />
+        <div className="flex-1 min-w-0 flex flex-col min-h-screen">
+          <AdminHeader user={user} storeName={storeName} />
+          <main className="flex-1 min-w-0 p-4 md:p-6 lg:p-7">
+            {children}
+          </main>
+        </div>
       </div>
     </div>
   )

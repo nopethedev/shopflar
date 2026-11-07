@@ -4,7 +4,6 @@ import { Heart, ShoppingBag } from 'lucide-react'
 import { useWishlist } from '@/lib/wishlist-store'
 import { toast } from '@/lib/toast'
 import { useCart } from '@/lib/cart-store'
-import { useState } from 'react'
 
 export function ProductCard({ product, index = 0 }) {
   const toggle = useWishlist(s => s.toggle)
@@ -19,10 +18,12 @@ export function ProductCard({ product, index = 0 }) {
 
   const image = product.images?.[0]?.url
   const image2 = product.images?.[1]?.url
+  const hasVariants = product.variants && product.variants.length > 0
+  const soldOut = product.isOutOfStock || (product.trackInventory && product.inventoryQty <= 0 && !hasVariants)
 
   const handleQuickAdd = (e) => {
     e.preventDefault()
-    if (product.variants && product.variants.length > 0) {
+    if (hasVariants) {
       window.location.href = `/products/${product.slug}`
       return
     }
@@ -41,13 +42,13 @@ export function ProductCard({ product, index = 0 }) {
 
   return (
     <Link href={`/products/${product.slug}`} className="group block">
-      <div className="relative aspect-[3/4] bg-muted rounded-lg overflow-hidden zoom-image card-lift">
+      <div className="relative aspect-[3/4] bg-muted overflow-hidden">
         {image ? (
           <img
             src={image}
             alt={product.name}
             loading={index < 4 ? 'eager' : 'lazy'}
-            className="absolute inset-0 h-full w-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
@@ -64,40 +65,30 @@ export function ProductCard({ product, index = 0 }) {
         )}
 
         {/* Badges */}
-        <div className="absolute top-3 left-3 flex flex-col gap-1.5">
-          {product.mysteryCrate && (
-            <span className="bg-purple-600 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded flex items-center gap-1">
-              🎁 Mystery
+        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5 items-start">
+          {soldOut && (
+            <span className="bg-background/95 text-foreground text-[10px] font-semibold uppercase tracking-wider px-2 py-1">
+              Sold out
             </span>
           )}
-          {product.productType === 'downloadable' && (
-            <span className="bg-blue-600 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
-              Digital
+          {!soldOut && onSale && (
+            <span className="bg-foreground text-background text-[10px] font-semibold uppercase tracking-wider px-2 py-1">
+              Save {discountPct}%
             </span>
           )}
-          {product.productType === 'code' && (
-            <span className="bg-emerald-600 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
-              License
-            </span>
-          )}
-          {onSale && (
-            <span className="bg-foreground text-background text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
-              -{discountPct}%
-            </span>
-          )}
-          {product.featured && !onSale && (
-            <span className="bg-amber-500 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
+          {!soldOut && !onSale && product.featured && (
+            <span className="bg-background/95 text-foreground text-[10px] font-semibold uppercase tracking-wider px-2 py-1">
               Featured
             </span>
           )}
-          {product.isOutOfStock && (
-            <span className="bg-rose-600 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
-              Sold Out
+          {product.mysteryCrate && (
+            <span className="bg-background/95 text-foreground text-[10px] font-semibold uppercase tracking-wider px-2 py-1">
+              Mystery box
             </span>
           )}
-          {product.inventoryQty > 0 && product.inventoryQty <= (product.lowStockThreshold || 5) && !product.isOutOfStock && (
-            <span className="bg-orange-500 text-white text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded">
-              Low Stock
+          {product.productType === 'downloadable' && (
+            <span className="bg-background/95 text-foreground text-[10px] font-semibold uppercase tracking-wider px-2 py-1">
+              Digital
             </span>
           )}
         </div>
@@ -109,20 +100,20 @@ export function ProductCard({ product, index = 0 }) {
             toggle(product.id)
             toast.info(isFav ? 'Removed from wishlist' : 'Added to wishlist')
           }}
-          className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/85 backdrop-blur flex items-center justify-center hover:bg-background transition-colors"
+          className="absolute top-2.5 right-2.5 h-8 w-8 rounded-full bg-background/80 backdrop-blur flex items-center justify-center hover:bg-background transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
           aria-label="Toggle wishlist"
         >
           <Heart className={`h-4 w-4 ${isFav ? 'fill-rose-500 text-rose-500' : 'text-foreground'}`} />
         </button>
 
         {/* Quick add */}
-        {!product.isOutOfStock && (
+        {!soldOut && (
           <button
             onClick={handleQuickAdd}
-            className="absolute bottom-3 left-3 right-3 bg-foreground text-background text-sm font-medium py-2.5 rounded-md opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2"
+            className="absolute bottom-0 left-0 right-0 bg-foreground/95 text-background text-[12px] font-medium tracking-wide py-2.5 opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0 transition-all duration-300 flex items-center justify-center gap-2"
           >
-            <ShoppingBag className="h-4 w-4" />
-            {product.variants && product.variants.length > 0 ? 'Select Options' : 'Quick Add'}
+            <ShoppingBag className="h-3.5 w-3.5" />
+            {hasVariants ? 'Choose options' : 'Add to cart'}
           </button>
         )}
       </div>
@@ -130,23 +121,26 @@ export function ProductCard({ product, index = 0 }) {
       <div className="mt-3 space-y-1">
         <div className="flex items-center gap-1.5 flex-wrap">
           {product.categories?.slice(0, 1).map(pc => (
-            <span key={pc.category.id} className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+            <span key={pc.category.id} className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-medium">
               {pc.category.name}
             </span>
           ))}
         </div>
-        <h3 className="text-sm font-medium leading-tight line-clamp-2">{product.name}</h3>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">${product.price.toFixed(2)}</span>
+        <h3 className="text-[13px] font-medium leading-snug line-clamp-2 group-hover:underline underline-offset-2">{product.name}</h3>
+        <div className="flex items-baseline gap-2 pt-0.5">
+          <span className="text-[13px] font-semibold">${product.price.toFixed(2)}</span>
           {onSale && (
             <>
-              <span className="text-xs text-muted-foreground line-through">${product.compareAtPrice.toFixed(2)}</span>
-              <span className="text-[10px] text-muted-foreground" title="Lowest price in the last 30 days (EU Omnibus Directive)">
-                was ${product.compareAtPrice.toFixed(2)}
-              </span>
+              <span className="text-[12px] text-muted-foreground line-through">${product.compareAtPrice.toFixed(2)}</span>
+              <span className="text-[10px] text-red-600 font-medium">-{discountPct}%</span>
             </>
           )}
         </div>
+        {hasVariants && (
+          <p className="text-[11px] text-muted-foreground">
+            {product.variants.length} {product.variants.length === 1 ? 'option' : 'options'}
+          </p>
+        )}
       </div>
     </Link>
   )

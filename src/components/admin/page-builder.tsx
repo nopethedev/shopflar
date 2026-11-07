@@ -13,6 +13,7 @@ import {
 import { toast } from '@/lib/toast'
 import { FileUpload } from '@/components/shared/file-upload'
 import { contentPositionClasses, overlayStyleFor } from '@/lib/section-style'
+import { THEMES as THEME_PRESETS } from '@/lib/themes'
 import { scopeSectionCss } from '@/lib/section-css'
 import {
   Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Save,
@@ -95,16 +96,8 @@ function defaultConfig(type) {
 // ============================================================
 // Theme presets
 // ============================================================
-const THEME_PRESETS = [
-  { id: 'mono', name: 'Minimal Mono', desc: 'Clean black & white', swatch: ['#ffffff', '#1a1a1a', '#d97706'], settings: { primary_color: '#1a1a1a', secondary_color: '#6b7280', accent_color: '#d97706', background_color: '#ffffff', text_color: '#1a1a1a', button_style: 'rounded', card_radius: '0.75rem', font_family: 'Inter', heading_font: 'Display' } },
-  { id: 'street', name: 'Bold Street', desc: 'High-contrast streetwear', swatch: ['#ffffff', '#111827', '#dc2626'], settings: { primary_color: '#111827', secondary_color: '#4b5563', accent_color: '#dc2626', background_color: '#ffffff', text_color: '#111827', button_style: 'square', card_radius: '0rem', font_family: 'Archivo', heading_font: 'Anton' } },
-  { id: 'pastel', name: 'Pastel Soft', desc: 'Gentle, friendly, rounded', swatch: ['#fdf2f8', '#9d174d', '#ec4899'], settings: { primary_color: '#9d174d', secondary_color: '#f9a8d4', accent_color: '#ec4899', background_color: '#fdf2f8', text_color: '#500724', button_style: 'pill', card_radius: '1.25rem', font_family: 'Nunito', heading_font: 'Poppins' } },
-  { id: 'luxe', name: 'Luxe Serif', desc: 'Editorial elegance', swatch: ['#fafaf9', '#1c1917', '#b45309'], settings: { primary_color: '#1c1917', secondary_color: '#78716c', accent_color: '#b45309', background_color: '#fafaf9', text_color: '#1c1917', button_style: 'rounded', card_radius: '0.25rem', font_family: 'Lato', heading_font: 'Playfair Display' } },
-  { id: 'pop', name: 'Playful Pop', desc: 'Colorful and fun', swatch: ['#ffffff', '#4c1d95', '#f59e0b'], settings: { primary_color: '#4c1d95', secondary_color: '#8b5cf6', accent_color: '#f59e0b', background_color: '#ffffff', text_color: '#2e1065', button_style: 'pill', card_radius: '1rem', font_family: 'Rubik', heading_font: 'Sora' } },
-  { id: 'noir', name: 'Noir Dark', desc: 'Dark mode luxury', swatch: ['#0a0a0a', '#fafafa', '#22d3ee'], settings: { primary_color: '#fafafa', secondary_color: '#525252', accent_color: '#22d3ee', background_color: '#0a0a0a', text_color: '#fafafa', button_style: 'rounded', card_radius: '0.75rem', font_family: 'Manrope', heading_font: 'Space Grotesk' } },
-  { id: 'fresh', name: 'Fresh Mint', desc: 'Modern organic', swatch: ['#f7fee7', '#14532d', '#16a34a'], settings: { primary_color: '#14532d', secondary_color: '#86efac', accent_color: '#16a34a', background_color: '#f7fee7', text_color: '#052e16', button_style: 'rounded', card_radius: '1rem', font_family: 'Work Sans', heading_font: 'DM Sans' } },
-  { id: 'ocean', name: 'Deep Ocean', desc: 'Calm professional blue', swatch: ['#f0f9ff', '#0c4a6e', '#0ea5e9'], settings: { primary_color: '#0c4a6e', secondary_color: '#7dd3fc', accent_color: '#0ea5e9', background_color: '#f0f9ff', text_color: '#082f49', button_style: 'rounded', card_radius: '0.75rem', font_family: 'Source Sans Pro', heading_font: 'Sora' } }
-]
+// Shared with the theme library page — 24 full theme presets.
+// (imported below)
 
 // ============================================================
 // Starter templates — one click fills the homepage
@@ -118,7 +111,7 @@ const TEMPLATES = [
 // ============================================================
 // Main builder
 // ============================================================
-export function PageBuilder({ initialSections, categories, pageType = 'home', pageId = null }) {
+export function PageBuilder({ initialSections, categories, pageType = 'home', pageId = null, themeName = 'Dawn' }) {
   const [sections, setSections] = useState(initialSections)
   const [selectedSection, setSelectedSection] = useState(null)
   const [previewDevice, setPreviewDevice] = useState('desktop')
@@ -439,16 +432,23 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
   const livePreviewWidth = liveDevice === 'mobile' ? 375 : liveDevice === 'tablet' ? 768 : 1200
 
   return (
-    <div className="flex gap-4">
+    <div className="flex flex-col xl:flex-row gap-4 items-start">
       {/* ===== Left sidebar: structure tree (like Shopify) ===== */}
-      <div className="w-60 shrink-0">
-        <div className="sticky top-24 space-y-3">
-          <Card className="p-3">
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h3 className="text-xs font-semibold">Sections</h3>
-              <span className="text-[10px] text-muted-foreground">{sections.length}</span>
+      <div className="w-full xl:w-[248px] shrink-0">
+        <div className="xl:sticky xl:top-[72px] space-y-3">
+          <Card className="p-0 overflow-hidden border-[#e3e3e3] shadow-sm">
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#e3e3e3]">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-wide text-[#8a8a8a]">Theme</p>
+                <p className="text-[13px] font-semibold text-[#1a1a1a] truncate">{themeName}</p>
+              </div>
+              <a href="/admin/themes" className="text-[11px] font-medium text-[#005bd3] hover:underline shrink-0">Change</a>
             </div>
-            <div className="space-y-0.5 max-h-[42vh] overflow-y-auto pr-0.5">
+            <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Sections</h3>
+              <span className="text-[10px] text-[#8a8a8a]">{sections.length}</span>
+            </div>
+            <div className="space-y-0.5 max-h-[42vh] overflow-y-auto px-2 pb-2">
               {sections.length === 0 && (
                 <p className="text-xs text-muted-foreground px-1 pb-1">Empty page — add a section below.</p>
               )}
@@ -475,69 +475,90 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
                 )
               })}
             </div>
-            <button onClick={() => setAdding(true)} className="mt-2 w-full flex items-center gap-1.5 px-1 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 rounded hover:bg-blue-50 transition-colors">
-              <Plus className="h-3.5 w-3.5" /> Add section
-            </button>
+            <div className="p-2 pt-0">
+              <button onClick={() => setAdding(true)} className="w-full flex items-center justify-center gap-1.5 px-2 py-2 text-[12px] font-medium text-[#303030] rounded-lg border border-dashed border-[#c9c9c9] hover:border-[#8a8a8a] hover:bg-[#fafafa] transition-colors">
+                <Plus className="h-3.5 w-3.5" /> Add section
+              </button>
+            </div>
           </Card>
 
-          <Card className="p-3 space-y-1.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1">Design</p>
-            <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setShowThemes(true)}>
-              <Palette className="h-3.5 w-3.5 mr-1.5" /> Themes
-            </Button>
-            <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setShowTemplates(true)}>
-              <Layers className="h-3.5 w-3.5 mr-1.5" /> Starter templates
-            </Button>
-            <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setShowLivePreview(true)}>
-              <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Real preview
-            </Button>
+          <Card className="p-2 space-y-0.5 border-[#e3e3e3] shadow-sm">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#8a8a8a] px-2 pt-1 pb-1">Theme settings</p>
+            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]" onClick={() => setShowThemes(true)}>
+              <Palette className="h-3.5 w-3.5 text-[#616161]" /> Theme library
+            </button>
+            <a href="/admin/appearance" className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]">
+              <Paintbrush className="h-3.5 w-3.5 text-[#616161]" /> Colors & typography
+            </a>
+            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]" onClick={() => setShowTemplates(true)}>
+              <Layers className="h-3.5 w-3.5 text-[#616161]" /> Starter templates
+            </button>
+            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]" onClick={() => setShowLivePreview(true)}>
+              <ExternalLink className="h-3.5 w-3.5 text-[#616161]" /> Preview store
+            </button>
           </Card>
         </div>
       </div>
 
       {/* ===== Center: canvas ===== */}
       <div className="flex-1 min-w-0 space-y-4">
-        {/* Toolbar */}
-        <div className="flex items-center justify-between gap-3 flex-wrap sticky top-20 z-10 bg-background/90 backdrop-blur py-2 -mt-2 rounded-lg">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-md border border-border overflow-hidden">
-              <button onClick={() => setPreviewDevice('desktop')} className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 ${previewDevice === 'desktop' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}>
-                <Monitor className="h-3.5 w-3.5" /> Desktop
-              </button>
-              <button onClick={() => setPreviewDevice('tablet')} className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 ${previewDevice === 'tablet' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}>
-                <Tablet className="h-3.5 w-3.5" /> Tablet
-              </button>
-              <button onClick={() => setPreviewDevice('mobile')} className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 ${previewDevice === 'mobile' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}>
-                <Smartphone className="h-3.5 w-3.5" /> Mobile
-              </button>
-            </div>
+        {/* Toolbar — dark Shopify-style editor chrome */}
+        <div className="flex items-center justify-between gap-2 flex-wrap sticky top-[56px] z-20 bg-[#1a1a1a] text-white rounded-xl px-2 py-1.5 shadow-sm">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <a href="/admin/themes" className="p-1.5 rounded-md hover:bg-white/10 text-white/80" title="Back to themes">
+              <X className="h-4 w-4" />
+            </a>
+            <span className="text-[12px] font-medium truncate">
+              {pageType === 'home' ? 'Home page' : 'Custom page'}
+            </span>
             {hasDraftChanges && (
-              <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">Unpublished changes</Badge>
+              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-medium bg-amber-400/15 text-amber-200 border border-amber-300/20 rounded-full px-2 py-0.5">
+                Unpublished changes
+              </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-md border border-border overflow-hidden">
-              <button onClick={undo} disabled={histCount === 0} className={`px-2.5 py-1.5 text-xs flex items-center gap-1 disabled:opacity-30 ${'hover:bg-muted'}`} title="Undo (Ctrl+Z)">
-                <Undo2 className="h-3.5 w-3.5" />
+          <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5">
+            {[
+              ['desktop', Monitor], ['tablet', Tablet], ['mobile', Smartphone]
+            ].map(([key, Icon]) => (
+              <button
+                key={key}
+                onClick={() => setPreviewDevice(key)}
+                className={`p-1.5 rounded-md transition-colors ${previewDevice === key ? 'bg-white text-[#1a1a1a]' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
+                title={`${key} preview`}
+              >
+                <Icon className="h-3.5 w-3.5" />
               </button>
-              <button onClick={redo} disabled={futureCount === 0} className={`px-2.5 py-1.5 text-xs flex items-center gap-1 disabled:opacity-30 ${'hover:bg-muted'}`} title="Redo (Ctrl+Shift+Z)">
-                <Redo2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <Button variant="outline" size="sm" onClick={discardChanges} disabled={!hasDraftChanges || publishing}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1" /> Discard
-            </Button>
-            <Button size="sm" onClick={publishChanges} disabled={!hasDraftChanges || publishing}>
-              <Upload className="h-3.5 w-3.5 mr-1" /> {publishing ? 'Publishing...' : 'Publish'}
-            </Button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={undo} disabled={histCount === 0} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Undo (Ctrl+Z)">
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={redo} disabled={futureCount === 0} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Redo (Ctrl+Shift+Z)">
+              <Redo2 className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={discardChanges} disabled={!hasDraftChanges || publishing} className="hidden md:inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] hover:bg-white/10 disabled:opacity-30" title="Discard unpublished changes">
+              <RotateCcw className="h-3.5 w-3.5" /> Discard
+            </button>
+            <a href="/" target="_blank" className="hidden lg:inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] hover:bg-white/10 text-white/80">
+              <Eye className="h-3.5 w-3.5" /> Preview
+            </a>
+            <button
+              onClick={publishChanges}
+              disabled={!hasDraftChanges || publishing}
+              className="inline-flex items-center gap-1.5 h-7 px-3 rounded-lg bg-white text-[#1a1a1a] text-[12px] font-semibold hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Upload className="h-3.5 w-3.5" /> {publishing ? 'Publishing…' : 'Publish'}
+            </button>
           </div>
         </div>
 
         {/* Add section button */}
         <Dialog open={adding} onOpenChange={setAdding}>
           <DialogTrigger asChild>
-            <Button variant="outline" className="w-full border-dashed">
-              <Plus className="h-4 w-4 mr-2" /> Add Section
+            <Button variant="outline" className="w-full border-dashed text-[#303030]">
+              <Plus className="h-4 w-4 mr-2" /> Add section
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -574,9 +595,9 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
         </Dialog>
 
         {/* Preview canvas */}
-        <div className={`mx-auto transition-all ${previewWidth}`}>
+        <div className={`mx-auto transition-all w-full ${previewWidth}`}>
           <div
-            className="rounded-xl border-2 border-dashed border-border overflow-hidden bg-background"
+            className="rounded-xl border border-[#e3e3e3] overflow-hidden bg-white shadow-sm"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => handlePaletteDrop(e, sections.length)}
           >
@@ -644,9 +665,9 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
 
       {/* ===== Right: inspector ===== */}
       {selectedSectionData && (
-        <div className="w-80 shrink-0">
-          <div className="sticky top-24">
-            <Card className="p-0">
+        <div className="w-full xl:w-[320px] shrink-0">
+          <div className="xl:sticky xl:top-[72px]">
+            <Card className="p-0 border-[#e3e3e3] shadow-sm">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                 <div className="flex items-center gap-2">
                   <Settings2 className="h-4 w-4" />
@@ -654,7 +675,7 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
                 </div>
                 <button onClick={() => setSelectedSection(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
               </div>
-              <div className="flex border-b border-border">
+              <div className="flex border-b border-[#e3e3e3]">
                 <button onClick={() => setRightTab('content')} className={`flex-1 px-3 py-2 text-xs font-medium ${rightTab === 'content' ? 'border-b-2 border-foreground -mb-px' : 'text-muted-foreground hover:text-foreground'}`}>Content</button>
                 <button onClick={() => setRightTab('design')} className={`flex-1 px-3 py-2 text-xs font-medium flex items-center justify-center gap-1.5 ${rightTab === 'design' ? 'border-b-2 border-foreground -mb-px' : 'text-muted-foreground hover:text-foreground'}`}>
                   <Paintbrush className="h-3.5 w-3.5" /> Design

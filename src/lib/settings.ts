@@ -44,6 +44,11 @@ export async function getStoreSettings() {
     newsletter: {
       title: get('newsletter_prompt_title', get('newsletter_title', 'Get 10% off your first order')),
       subtitle: get('newsletter_prompt_subtitle', get('newsletter_subtitle', 'Subscribe to our newsletter for early access to new drops, exclusive offers, and styling tips.'))
+    },
+    announcement: {
+      enabled: get('announcement_enabled', 'true') === 'true',
+      text: get('announcement_text', 'Free shipping on orders over $75 · 30-day returns'),
+      link: get('announcement_link', '/products')
     }
   }
 }

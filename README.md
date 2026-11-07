@@ -508,6 +508,57 @@ A configurable post-purchase mini game (Admin → Store Settings → Free Order 
 
 ---
 
+## 23. Theme Library & Shopify-Style Theme Editor
+
+**Admin → Online Store → Themes** is a full theme library (24 presets across Minimal,
+Editorial, Bold, Warm, Playful, Dark, Nature and Professional categories). Every theme ships a
+complete token set: colors, body + heading fonts, button shape and corner radius.
+
+- **One-click install** — *Use theme* writes the tokens and remembers the active theme; content,
+  products and pages are never touched
+- **Live mock previews** on every card plus a current-theme panel showing the active typography
+  and palette
+- **Search and category filters** so a 24-theme library stays easy to browse
+- **Customize** jumps straight into the visual editor
+
+**Admin → Online Store → Theme editor** (`/admin/builder`) now uses Shopify's editor chrome:
+
+- Dark editor toolbar with the page being edited, desktop/tablet/mobile canvas widths, undo/redo,
+  preview and a prominent **Publish** button (drafts stay private until published)
+- Left panel lists the theme, the section tree (drag to reorder, hide, duplicate, delete) and a
+  dashed **Add section** button
+- Theme settings shortcuts for the theme library, colors & typography, starter templates and a
+  real storefront preview
+- Right inspector keeps Content/Design tabs, responsive (desktop/mobile) controls and scoped CSS
+- Draft/publish workflow and `/?preview=1` for admins are unchanged
+
+**Admin → Navigation & branding** (`/admin/appearance`) remains the place for fine-grained tokens,
+logo and the storefront announcement bar (`announcement_enabled`, `announcement_text`,
+`announcement_link` in Store Settings).
+
+---
+
+## 24. AI Assistant (bring your own API key)
+
+**Admin → AI Assistant** (`/admin/ai`) is a Sidekick-style copilot for the store. It works with any
+OpenAI-compatible chat-completions API: OpenAI, Groq, OpenRouter, Together, a local Ollama or
+LM Studio, or your own gateway.
+
+- **Custom API key** — paste a key, base URL and model under *AI settings*. The key is stored
+  server-side in `StoreSetting` (`ai_api_key`) and is only ever returned masked; it is never
+  serialized to the browser
+- **Environment fallback** — `AI_API_KEY` (or `OPENAI_API_KEY`), `AI_BASE_URL` and `AI_MODEL` are
+  used when no stored key exists
+- **Live store context** — every request is grounded with a server-built snapshot of revenue,
+  orders, AOV, bestsellers, low stock, subscribers and recent orders, so answers use real numbers
+- **Ready-made prompts** for product copy, welcome flows, revenue analysis and restock priorities,
+  plus Markdown replies with copy-to-clipboard
+- **Test connection** button verifies key, base URL and model before you rely on it
+- Missing or invalid keys produce an actionable message with a shortcut to settings — the store
+  itself never depends on the AI being configured
+
+---
+
 ## Architecture Overview
 
 ```
