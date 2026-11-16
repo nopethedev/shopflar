@@ -1,13 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from '@/lib/toast'
-import { CheckCircle2, RefreshCw, ExternalLink } from 'lucide-react'
+import { RefreshCw, ExternalLink } from 'lucide-react'
 import { carrierNames, resolveCarrierUrl } from '@/lib/tracking'
 
 const STATUSES = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REFUNDED', 'FAILED']
@@ -39,7 +35,6 @@ export function AdminOrderActions({ order }) {
     }
   }
 
-  // Pull fulfillment status + tracking number straight from Printify
   const syncPrintify = async () => {
     setSyncing(true)
     try {
@@ -81,66 +76,86 @@ export function AdminOrderActions({ order }) {
   const previewUrl = trackingNumber ? resolveCarrierUrl(trackingCarrier, trackingNumber) : null
 
   return (
-    <div className="rounded-xl border border-border bg-background p-5 space-y-3">
-      <h2 className="font-semibold">Order Actions</h2>
-
-      <div>
-        <Label className="text-xs">Status</Label>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {STATUSES.map(s => (
-              <SelectItem key={s} value={s}>{s.replace('_', ' ')}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="sf-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-[#e3e3e3]">
+        <h2 className="sf-section-title">Update order</h2>
       </div>
 
-      <div className="space-y-2">
-        <Label className="text-xs">Tracking Number</Label>
-        <div className="flex gap-2">
-          <Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="e.g., 1Z999AA..." />
-          {order.printifyOrderId && (
-            <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={syncPrintify} disabled={syncing} title="Pull tracking from Printify">
-              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              Sync
-            </Button>
-          )}
-        </div>
+      <div className="p-4 space-y-3">
         <div>
-          <Label className="text-xs">Carrier</Label>
-          <Select value={trackingCarrier || 'none'} onValueChange={v => setTrackingCarrier(v === 'none' ? '' : v)}>
-            <SelectTrigger><SelectValue placeholder="Auto-detect / pick carrier" /></SelectTrigger>
+          <label className="block text-[11px] font-medium text-[#616161] mb-1">Order status</label>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="h-8 text-[12px]"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">Auto-detect from number</SelectItem>
-              {carrierNames().map(c => (
-                <SelectItem key={c} value={c}>{c}</SelectItem>
+              {STATUSES.map(s => (
+                <SelectItem key={s} value={s} className="text-[12px]">{s.replace('_', ' ')}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        {previewUrl && (
-          <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline">
-            <ExternalLink className="h-3 w-3" /> Preview tracking link
-          </a>
+
+        <div>
+          <label className="block text-[11px] font-medium text-[#616161] mb-1">Tracking number</label>
+          <div className="flex gap-1.5">
+            <input
+              value={trackingNumber}
+              onChange={(e) => setTrackingNumber(e.target.value)}
+              placeholder="1Z999AA..."
+              className="sf-input"
+            />
+            {order.printifyOrderId && (
+              <button
+                type="button"
+                onClick={syncPrintify}
+                disabled={syncing}
+                className="sf-btn sf-btn-secondary shrink-0 px-2.5"
+                title="Pull tracking from Printify"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-medium text-[#616161] mb-1">Carrier</label>
+          <Select value={trackingCarrier || 'none'} onValueChange={v => setTrackingCarrier(v === 'none' ? '' : v)}>
+            <SelectTrigger className="h-8 text-[12px]"><SelectValue placeholder="Auto-detect" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none" className="text-[12px]">Auto-detect from number</SelectItem>
+              {carrierNames().map(c => (
+                <SelectItem key={c} value={c} className="text-[12px]">{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {previewUrl && (
+            <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-[#005bd3] hover:underline mt-1">
+              <ExternalLink className="h-3 w-3" /> Preview tracking link
+            </a>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-[11px] font-medium text-[#616161] mb-1">Internal notes</label>
+          <textarea
+            rows={3}
+            value={internalNotes}
+            onChange={(e) => setInternalNotes(e.target.value)}
+            placeholder="Visible only to staff"
+            className="sf-input h-auto py-2 resize-y"
+          />
+        </div>
+
+        <button onClick={save} disabled={saving} className="sf-btn sf-btn-primary w-full disabled:opacity-50">
+          {saving ? 'Saving...' : 'Save changes'}
+        </button>
+
+        {order.paymentStatus === 'PAID' && (
+          <button onClick={refund} className="sf-btn sf-btn-secondary w-full text-rose-600 border-rose-200 hover:bg-rose-50">
+            Refund order
+          </button>
         )}
       </div>
-
-      <div>
-        <Label className="text-xs">Internal Notes</Label>
-        <Textarea rows={3} value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} placeholder="Notes visible only to admins" />
-      </div>
-
-      <Button onClick={save} disabled={saving} className="w-full">
-        <CheckCircle2 className="h-4 w-4 mr-2" />
-        {saving ? 'Saving...' : 'Save Changes'}
-      </Button>
-
-      {order.paymentStatus === 'PAID' && (
-        <Button onClick={refund} variant="outline" className="w-full text-destructive hover:text-destructive">
-          Process Refund
-        </Button>
-      )}
     </div>
   )
 }

@@ -1,7 +1,5 @@
 import { db } from '@/lib/db'
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
 import { AdminDiscountsTable } from '@/components/admin/admin-discounts-table'
 
 export const dynamic = 'force-dynamic'
@@ -13,15 +11,17 @@ export default async function AdminDiscountsPage() {
   })
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Discounts</h1>
-          <p className="text-sm text-muted-foreground mt-1">{discounts.length} discount codes</p>
+          <h1 className="text-[22px] font-semibold tracking-tight text-[#1a1a1a]">Discounts</h1>
+          <p className="text-[13px] text-[#616161] mt-0.5">
+            Offer codes and free shipping to boost conversion.
+          </p>
         </div>
-        <Button asChild>
-          <Link href="/admin/discounts/new"><Plus className="h-4 w-4 mr-2" /> New Discount</Link>
-        </Button>
+        <Link href="/admin/discounts/new" className="sf-btn sf-btn-primary">
+          Create discount
+        </Link>
       </div>
       <AdminDiscountsTable discounts={discounts} />
     </div>

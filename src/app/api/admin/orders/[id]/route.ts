@@ -13,6 +13,8 @@ export async function PATCH(req, { params }) {
     if (body.trackingNumber !== undefined) data.trackingNumber = body.trackingNumber || null
     if (body.trackingCarrier !== undefined) data.trackingCarrier = body.trackingCarrier || null
     if (body.internalNotes !== undefined) data.internalNotes = body.internalNotes || null
+    if (body.fulfillmentStatus) data.fulfillmentStatus = body.fulfillmentStatus
+    if (body.paymentStatus) data.paymentStatus = body.paymentStatus
     if (body.status === 'SHIPPED' && body.trackingNumber) data.fulfillmentStatus = 'FULFILLED'
     if (body.status === 'DELIVERED') data.fulfillmentStatus = 'FULFILLED'
     if (body.status === 'CANCELLED') data.paymentStatus = 'REFUNDED'

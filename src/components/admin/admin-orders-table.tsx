@@ -2,186 +2,305 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Search, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow
-} from '@/components/ui/table'
+  Search, ChevronLeft, ChevronRight, Download, CheckCircle2,
+  ShoppingBag, PackageCheck, ChevronRight as Chevron
+} from 'lucide-react'
 
-const statusStyles = {
-  PENDING: 'bg-amber-100 text-amber-700',
-  PAYMENT_PENDING: 'bg-amber-100 text-amber-700',
-  PAID: 'bg-emerald-100 text-emerald-700',
-  PROCESSING: 'bg-blue-100 text-blue-700',
-  SHIPPED: 'bg-purple-100 text-purple-700',
-  DELIVERED: 'bg-emerald-100 text-emerald-700',
-  CANCELLED: 'bg-rose-100 text-rose-700',
-  REFUNDED: 'bg-rose-100 text-rose-700',
-  FAILED: 'bg-rose-100 text-rose-700'
+const TABS = [
+  { id: 'all', label: 'All' },
+  { id: 'unfulfilled', label: 'Unfulfilled' },
+  { id: 'unpaid', label: 'Unpaid' },
+  { id: 'open', label: 'Open' },
+  { id: 'archived', label: 'Archived' }
+]
+
+const PAYMENT_BADGE: Record<string, { label: string; cls: string }> = {
+  PAID: { label: 'Paid', cls: 'sf-badge-success' },
+  UNPAID: { label: 'Unpaid', cls: 'sf-badge-warning' },
+  PENDING: { label: 'Pending', cls: 'sf-badge-warning' },
+  REFUNDED: { label: 'Refunded', cls: 'sf-badge-danger' },
+  PARTIALLY_REFUNDED: { label: 'Partially refunded', cls: 'sf-badge-info' }
 }
 
-const STATUSES = ['PENDING', 'PAYMENT_PENDING', 'PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'REFUNDED', 'FAILED']
+const FULFILLMENT_BADGE: Record<string, { label: string; cls: string }> = {
+  FULFILLED: { label: 'Fulfilled', cls: 'sf-badge-success' },
+  PARTIAL: { label: 'Partially fulfilled', cls: 'sf-badge-info' },
+  UNFULFILLED: { label: 'Unfulfilled', cls: 'sf-badge-neutral' }
+}
 
-export function AdminOrdersTable({ orders, total, page, limit, status, search, statusCounts }) {
+const money = (cents: number, currency = 'USD') => {
+  try {
+    return new Intl.NumberFormat('en', { style: 'currency', currency: currency || 'USD' }).format(cents)
+  } catch {
+    return `$${cents.toFixed(2)}`
+  }
+}
+
+const customerName = (o: any) => {
+  const a = o.shippingAddress || {}
+  const name = [a.firstName, a.lastName].filter(Boolean).join(' ')
+  return name || o.email.split('@')[0]
+}
+
+export function AdminOrdersTable({ orders, total, page, limit, tab, search, statusFilter, counts }) {
   const router = useRouter()
-  const [searchInput, setSearchInput] = useState(search)
+  const [query, setQuery] = useState(search)
+  const [selected, setSelected] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
 
-  const countMap = new Map(statusCounts.map(s => [s.status, s._count._all]))
+  const pages = Math.max(1, Math.ceil(total / limit))
+  const allSelected = orders.length > 0 && orders.every(o => selected.includes(o.id))
+
+  const go = (next: Record<string, string | number | undefined>) => {
+    const params = new URLSearchParams()
+    const merged = { tab: tab === 'all' ? undefined : tab, search: search || undefined, status: statusFilter || undefined, page: undefined, ...next }
+    Object.entries(merged).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== 1) params.set(k, String(v))
+    })
+    const qs = params.toString()
+    router.push(`/admin/orders${qs ? `?${qs}` : ''}`)
+  }
+
+  const submitSearch = (e) => {
+    e.preventDefault()
+    setSelected([])
+    go({ search: query.trim() || undefined, page: 1 })
+  }
+
+  const changeTab = (id: string) => {
+    setSelected([])
+    go({ tab: id === 'all' ? undefined : id, status: undefined, page: 1 })
+  }
+
+  const exportCsv = () => {
+    const source = selected.length ? orders.filter(o => selected.includes(o.id)) : orders
+    const lines = ['order,date,customer,email,total,payment,fulfillment']
+    source.forEach(o => {
+      lines.push([
+        o.orderNumber,
+        new Date(o.createdAt).toISOString(),
+        `"${customerName(o)}"`,
+        o.email,
+        o.total.toFixed(2),
+        o.paymentStatus,
+        o.fulfillmentStatus
+      ].join(','))
+    })
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Export ready', `${source.length} order${source.length === 1 ? '' : 's'}`)
+  }
+
+  const markFulfilled = async () => {
+    if (!selected.length) return
+    setBusy(true)
+    let done = 0
+    for (const id of selected) {
+      const r = await fetch(`/api/admin/orders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fulfillmentStatus: 'FULFILLED' })
+      })
+      if (r.ok) done++
+    }
+    setBusy(false)
+    setSelected([])
+    if (done) toast.success(`${done} order${done === 1 ? '' : 's'} marked as fulfilled`)
+    else toast.error('Could not update orders')
+    router.refresh()
+  }
 
   return (
     <div className="space-y-3">
-      {/* Status tabs */}
-      <div className="flex flex-wrap gap-1">
-        <button
-          onClick={() => router.push('/admin/orders')}
-          className={`px-3 py-1.5 text-xs rounded-md font-medium ${!status ? 'bg-foreground text-background' : 'hover:bg-muted'}`}
-        >
-          All ({total})
-        </button>
-        {STATUSES.map(s => {
-          const c = countMap.get(s) || 0
-          if (c === 0) return null
+      {/* Tabs */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+        {TABS.map(t => {
+          const count = counts?.[t.id] ?? 0
+          const active = tab === t.id || (t.id === 'all' && tab !== 'unfulfilled' && tab !== 'unpaid' && tab !== 'open' && tab !== 'archived')
           return (
             <button
-              key={s}
-              onClick={() => router.push(`/admin/orders?status=${s}`)}
-              className={`px-3 py-1.5 text-xs rounded-md font-medium ${status === s ? 'bg-foreground text-background' : 'hover:bg-muted'}`}
+              key={t.id}
+              onClick={() => changeTab(t.id)}
+              className={cn(
+                'inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-[12px] font-medium whitespace-nowrap border transition-colors',
+                active
+                  ? 'bg-[#1a1a1a] text-white border-[#1a1a1a]'
+                  : 'bg-white text-[#303030] border-[#d9d9d9] hover:bg-[#fafafa]'
+              )}
             >
-              {s.replace('_', ' ')} ({c})
+              {t.label}
+              <span className={cn('text-[10px] px-1.5 rounded-full', active ? 'bg-white/20' : 'bg-[#f1f1f1] text-[#616161]')}>
+                {count}
+              </span>
             </button>
           )
         })}
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); router.push(`/admin/orders?search=${encodeURIComponent(searchInput)}`) }} className="flex gap-2 max-w-md">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Search order # or email..." className="pl-9" />
-        </div>
-        <Button type="submit" variant="outline">Search</Button>
-      </form>
+      <div className="sf-card overflow-hidden">
+        {/* Toolbar */}
+        {selected.length > 0 ? (
+          <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-2 border-b border-[#e3e3e3] bg-[#f8fafc]">
+            <div className="flex items-center gap-2 text-[12px]">
+              <span className="sf-badge sf-badge-info">{selected.length} selected</span>
+              <button onClick={() => setSelected([])} className="text-[#005bd3] hover:underline">Clear</button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={exportCsv} className="sf-btn sf-btn-secondary">
+                <Download className="h-3.5 w-3.5" /> Export
+              </button>
+              <button onClick={markFulfilled} disabled={busy} className="sf-btn sf-btn-primary disabled:opacity-50">
+                <PackageCheck className="h-3.5 w-3.5" /> {busy ? 'Updating...' : 'Mark as fulfilled'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2 flex-wrap p-3 border-b border-[#e3e3e3]">
+            <form onSubmit={submitSearch} className="relative flex-1 min-w-[220px] max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8a8a8a]" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search orders"
+                className="sf-input pl-8"
+                aria-label="Search orders"
+              />
+            </form>
+            <div className="flex items-center gap-2">
+              {statusFilter && (
+                <button onClick={() => go({ status: undefined, page: 1 })} className="sf-badge sf-badge-neutral hover:bg-[#e9e9e9]">
+                  Status: {statusFilter.replace('_', ' ')} ✕
+                </button>
+              )}
+              <button onClick={exportCsv} className="sf-btn sf-btn-secondary">
+                <Download className="h-3.5 w-3.5" /> Export
+              </button>
+            </div>
+          </div>
+        )}
 
-      <div className="rounded-xl border border-border bg-background overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Order</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Items</TableHead>
-              <TableHead>Total</TableHead>
-              <TableHead>Payment</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {orders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
-                  No orders found.
-                </TableCell>
-              </TableRow>
-            ) : orders.map(o => (
-              <TableRow key={o.id}>
-                <TableCell className="font-medium">{o.orderNumber}</TableCell>
-                <TableCell>
-                  <p className="text-sm">{o.shippingAddress?.firstName} {o.shippingAddress?.lastName}</p>
-                  <p className="text-xs text-muted-foreground">{o.email}</p>
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {new Date(o.createdAt).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-sm">
-                  {o.items.reduce((n, it) => n + it.quantity, 0)}
-                </TableCell>
-                <TableCell className="font-semibold">${o.total.toFixed(2)}</TableCell>
-                <TableCell>
-                  <Badge variant={o.paymentStatus === 'PAID' ? 'default' : 'secondary'}>
-                    {o.paymentStatus.replace('_', ' ')}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded ${statusStyles[o.status] || 'bg-muted'}`}>
-                    {o.status.replace('_', ' ')}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <Link href={`/admin/orders/${o.id}`} className="text-sm font-medium hover:underline text-foreground">
-                      View
-                    </Link>
-                    {o.paymentStatus === 'PAID' && o.status !== 'CANCELLED' && o.status !== 'REFUNDED' && (
-                      <FulfillButton orderId={o.id} />
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="sf-table">
+            <thead>
+              <tr>
+                <th className="w-8">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(e) => setSelected(e.target.checked ? orders.map(o => o.id) : [])}
+                    className="h-3.5 w-3.5 rounded border-[#c9c9c9]"
+                    aria-label="Select all orders on this page"
+                  />
+                </th>
+                <th>Order</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th className="text-right">Total</th>
+                <th>Payment</th>
+                <th>Fulfillment</th>
+                <th className="w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="py-14 text-center">
+                      <ShoppingBag className="h-8 w-8 text-[#c9c9c9] mx-auto mb-2" />
+                      <p className="text-[13px] font-medium text-[#1a1a1a]">No orders found</p>
+                      <p className="text-[12px] text-[#8a8a8a] mt-0.5">
+                        {search || statusFilter ? 'Try a different search or filter.' : 'Orders will appear here as customers check out.'}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : orders.map(o => {
+                const payment = PAYMENT_BADGE[o.paymentStatus] || { label: o.paymentStatus, cls: 'sf-badge-neutral' }
+                const fulfillment = FULFILLMENT_BADGE[o.fulfillmentStatus] || { label: o.fulfillmentStatus || 'Unfulfilled', cls: 'sf-badge-neutral' }
+                const itemCount = o.items?.reduce((n, it) => n + it.quantity, 0) || 0
+                return (
+                  <tr key={o.id} className={cn(selected.includes(o.id) && 'bg-[#f7f9fc]')}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(o.id)}
+                        onChange={(e) => setSelected(e.target.checked ? [...selected, o.id] : selected.filter(id => id !== o.id))}
+                        className="h-3.5 w-3.5 rounded border-[#c9c9c9]"
+                        aria-label={`Select order ${o.orderNumber}`}
+                      />
+                    </td>
+                    <td>
+                      <Link href={`/admin/orders/${o.id}`} className="text-[13px] font-semibold text-[#1a1a1a] hover:underline">
+                        {o.orderNumber}
+                      </Link>
+                      <p className="text-[11px] text-[#8a8a8a]">{itemCount} item{itemCount === 1 ? '' : 's'}</p>
+                    </td>
+                    <td className="text-[12px] text-[#616161] whitespace-nowrap">
+                      {new Date(o.createdAt).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                      <span className="block text-[11px] text-[#8a8a8a]">
+                        {new Date(o.createdAt).toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <span className="h-7 w-7 rounded-full bg-[#eef2f7] text-[#3d4f63] flex items-center justify-center text-[11px] font-semibold shrink-0">
+                          {customerName(o)[0]?.toUpperCase()}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[13px] text-[#1a1a1a] truncate">{customerName(o)}</span>
+                          <span className="block text-[11px] text-[#8a8a8a] truncate">{o.email}</span>
+                        </span>
+                      </div>
+                    </td>
+                    <td className="text-right text-[13px] font-medium whitespace-nowrap">{money(o.total, o.currency)}</td>
+                    <td><span className={cn('sf-badge', payment.cls)}>{payment.label}</span></td>
+                    <td><span className={cn('sf-badge', fulfillment.cls)}>{fulfillment.label}</span></td>
+                    <td>
+                      <Link href={`/admin/orders/${o.id}`} className="text-[#8a8a8a] hover:text-[#1a1a1a]" aria-label={`Open order ${o.orderNumber}`}>
+                        <Chevron className="h-4 w-4" />
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between px-3 py-2.5 border-t border-[#e3e3e3] text-[12px] text-[#616161]">
+          <span>{total} order{total === 1 ? '' : 's'}</span>
+          {pages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => go({ page: page - 1 })}
+                disabled={page <= 1}
+                className="p-1.5 rounded-md hover:bg-[#f1f1f1] disabled:opacity-40"
+                aria-label="Previous page"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="px-2">Page {page} of {pages}</span>
+              <button
+                onClick={() => go({ page: page + 1 })}
+                disabled={page >= pages}
+                className="p-1.5 rounded-md hover:bg-[#f1f1f1] disabled:opacity-40"
+                aria-label="Next page"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-
-      {total > limit && (
-        <div className="flex items-center justify-center gap-2">
-          <Button variant="outline" size="sm" disabled={page === 1} onClick={() => router.push(`/admin/orders?page=${page - 1}${status ? `&status=${status}` : ''}${search ? `&search=${search}` : ''}`)}>
-            <ChevronLeft className="h-4 w-4" /> Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">Page {page} of {Math.ceil(total / limit)}</span>
-          <Button variant="outline" size="sm" disabled={page >= Math.ceil(total / limit)} onClick={() => router.push(`/admin/orders?page=${page + 1}${status ? `&status=${status}` : ''}${search ? `&search=${search}` : ''}`)}>
-            Next <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
     </div>
-  )
-}
-
-function FulfillButton({ orderId }) {
-  const router = useRouter()
-  const [fulfilling, setFulfilling] = useState(false)
-  const [fulfilled, setFulfilled] = useState(false)
-
-  const fulfill = async () => {
-    if (!confirm('Send this order to the fulfillment provider?')) return
-    setFulfilling(true)
-    try {
-      // Try the first available provider — in practice, the admin would pick from Admin → Fulfillment
-      // This sends to whichever provider is enabled and configured
-      const r = await fetch(`/api/admin/orders/${orderId}/fulfill`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'printful' })
-      })
-      if (r.ok) {
-        setFulfilled(true)
-        toast.success('Order sent for fulfillment')
-        router.refresh()
-      } else {
-        const d = await r.json()
-        throw new Error(d.error || 'Failed')
-      }
-    } catch (e) {
-      toast.error('Fulfillment failed', e.message)
-    } finally {
-      setFulfilling(false)
-    }
-  }
-
-  if (fulfilled) {
-    return <span className="text-xs text-emerald-600 font-medium">✓ Fulfilled</span>
-  }
-
-  return (
-    <button
-      onClick={fulfill}
-      disabled={fulfilling}
-      className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline disabled:opacity-50"
-    >
-      {fulfilling ? 'Sending...' : 'Fulfill'}
-    </button>
   )
 }
