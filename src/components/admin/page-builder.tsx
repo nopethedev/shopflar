@@ -1,394 +1,326 @@
 'use client'
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
-  Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle
-} from '@/components/ui/dialog'
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors
+} from '@dnd-kit/core'
+import {
+  SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
+  SECTION_CATALOG, GROUPS, defaultConfig, TEMPLATES,
+  SectionPreview, SectionConfigEditor, DesignEditor
+} from './builder-parts'
+import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-import { FileUpload } from '@/components/shared/file-upload'
-import { contentPositionClasses, overlayStyleFor } from '@/lib/section-style'
-import { THEMES as THEME_PRESETS } from '@/lib/themes'
-import { scopeSectionCss } from '@/lib/section-css'
 import {
-  Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Save,
-  Image as ImageIcon, Type, Mail, Gift, Layout, Scroll, Grid3x3, Code,
-  GripVertical, Monitor, Smartphone, Tablet, X, Settings2, Copy,
-  RotateCcw, Undo2, Redo2, Upload, Megaphone, Columns, MessageSquare, HelpCircle, Video,
-  Star, Play, Palette, Search, Sparkles, Timer, BarChart3, Building2,
-  MessageCircle, Layers, ExternalLink, Paintbrush, ChevronDown
+  X, Plus, Search, GripVertical, Eye, EyeOff, Trash2, Copy, ArrowUp, ArrowDown,
+  Monitor, Tablet, Smartphone, Undo2, Redo2, Upload, RotateCcw, ExternalLink,
+  MousePointerClick, Layers, Lock, ChevronDown, RefreshCw, Sparkles, Settings2,
+  PanelLeft, Globe, Save, Check
 } from 'lucide-react'
 
-// ============================================================
-// Section catalog — grouped for the palette
-// ============================================================
-const SECTION_CATALOG = [
-  { type: 'hero', label: 'Hero Banner', group: 'Essentials', icon: Layout, description: 'Large image with title, subtitle, and CTA button' },
-  { type: 'announcement-bar', label: 'Announcement Bar', group: 'Essentials', icon: Megaphone, description: 'Thin bar at the top with a message' },
-  { type: 'text', label: 'Text Block', group: 'Essentials', icon: Type, description: 'Heading + paragraph of custom text' },
-  { type: 'rich-text', label: 'Rich Text', group: 'Essentials', icon: Type, description: 'Long-form text content with HTML formatting' },
-  { type: 'image', label: 'Image', group: 'Media', icon: ImageIcon, description: 'Single image with optional link' },
-  { type: 'image-text', label: 'Image + Text', group: 'Media', icon: Columns, description: 'Side-by-side image and text with CTA' },
-  { type: 'slideshow', label: 'Slideshow', group: 'Media', icon: Play, description: 'Auto-rotating slides with captions and CTAs' },
-  { type: 'video', label: 'Video', group: 'Media', icon: Video, description: 'YouTube/Vimeo embed or self-hosted video' },
-  { type: 'product-grid', label: 'Product Grid', group: 'Products', icon: Grid3x3, description: 'Show featured, new, or filtered products' },
-  { type: 'discounts', label: 'Discount Codes', group: 'Products', icon: Gift, description: 'Show active discount codes customers can copy' },
-  { type: 'countdown', label: 'Countdown Timer', group: 'Marketing', icon: Timer, description: 'Urgency timer for sales and launches' },
-  { type: 'cta', label: 'CTA Banner', group: 'Marketing', icon: Megaphone, description: 'Bold colored banner with a call to action' },
-  { type: 'marquee', label: 'Marquee', group: 'Marketing', icon: Scroll, description: 'Scrolling text banner for announcements' },
-  { type: 'newsletter', label: 'Newsletter Signup', group: 'Marketing', icon: Mail, description: 'Email subscribe form with prompt text' },
-  { type: 'testimonials', label: 'Testimonials', group: 'Social proof', icon: MessageSquare, description: 'Customer reviews with star ratings' },
-  { type: 'stats', label: 'Stats / Numbers', group: 'Social proof', icon: BarChart3, description: 'Big numbers row — customers, rating, shipping' },
-  { type: 'logo-cloud', label: 'Logo Cloud', group: 'Social proof', icon: Building2, description: 'Partner or press logos in a row' },
-  { type: 'faq', label: 'FAQ', group: 'Support', icon: HelpCircle, description: 'Collapsible questions and answers' },
-  { type: 'contact', label: 'Contact Form', group: 'Support', icon: MessageCircle, description: 'Contact form with your store email' },
-  { type: 'custom-html', label: 'Custom HTML', group: 'Advanced', icon: Code, description: 'Raw HTML code block' }
+const DEVICES = [
+  { id: 'desktop', icon: Monitor, label: 'Desktop', width: '100%' },
+  { id: 'tablet', icon: Tablet, label: 'Tablet', width: 834 },
+  { id: 'mobile', icon: Smartphone, label: 'Mobile', width: 390 }
 ]
 
-const GROUPS = ['Essentials', 'Products', 'Media', 'Marketing', 'Social proof', 'Support', 'Advanced']
-const PADDING_Y = { none: 0, sm: 24, md: 56, lg: 80, xl: 120 }
-const PADDING_DEFAULTS = { hero: 'none', slideshow: 'none', 'announcement-bar': 'none', marquee: 'none', newsletter: 'lg' }
-
-// Shopify-style 9-way position picker
-const POSITION_OPTIONS = [
-  ['top-left', 'Top left'], ['top-center', 'Top center'], ['top-right', 'Top right'],
-  ['middle-left', 'Middle left'], ['middle-center', 'Middle center'], ['middle-right', 'Middle right'],
-  ['bottom-left', 'Bottom left'], ['bottom-center', 'Bottom center'], ['bottom-right', 'Bottom right']
-]
-
-// ============================================================
-// Default configs
-// ============================================================
-function defaultConfig(type) {
-  const defaults = {
-    hero: { title: 'New Season Drop', subtitle: 'Add your subtitle here', buttonText: 'Shop Now', buttonUrl: '/products', image: '', overlay: 'dark', overlayOpacity: 40, height: '60vh', heightMobile: '48vh', titleSize: 'large', contentPosition: 'middle-left' },
-    'announcement-bar': { text: 'Free shipping on all orders over $50!', bg: '#1a1a1a', color: '#ffffff' },
-    'product-grid': { title: 'Products', source: 'featured', limit: 8, categoryId: '', columnsDesktop: 4, columnsMobile: 2, buttonText: '', buttonUrl: '/products' },
-    'image-text': { title: 'Section Title', body: '<p>Add your text here.</p>', image: '', buttonText: 'Learn More', buttonUrl: '/products', layout: 'image-left' },
-    marquee: { text: '🔥 Sale now on • Free shipping over $75 • New arrivals weekly 🔥', speed: 'normal', bg: '#1a1a1a', color: '#ffffff' },
-    text: { title: 'Section Title', body: 'Add your text here. HTML is supported.', align: 'center' },
-    image: { url: '', alt: '', link: '' },
-    'rich-text': { title: '', content: '<p>Your rich text content here. HTML supported.</p>' },
-    testimonials: { title: 'What Our Customers Say', items: [{ author: 'Jane D.', role: 'Verified Buyer', rating: 5, text: 'Amazing quality and fast shipping!' }, { author: 'John S.', role: 'Verified Buyer', rating: 5, text: 'Best purchase I\'ve made this year.' }] },
-    faq: { title: 'Frequently Asked Questions', items: [{ question: 'How long does shipping take?', answer: 'Standard shipping takes 3-5 business days.' }, { question: 'What is your return policy?', answer: 'We accept returns within 30 days of delivery.' }] },
-    newsletter: { title: 'Get 10% off your first order', subtitle: 'Subscribe to our newsletter' },
-    discounts: { title: 'Active Discount Codes' },
-    video: { title: '', videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
-    slideshow: { autoplay: true, interval: 5, overlay: 'dark', overlayOpacity: 40, height: '70vh', heightMobile: '50vh', contentPosition: 'middle-left', slides: [
-      { image: '', eyebrow: 'New in', title: 'First slide headline', subtitle: 'Describe the collection in one line.', buttonText: 'Shop now', buttonUrl: '/products' },
-      { image: '', eyebrow: 'Bestsellers', title: 'Second slide headline', subtitle: 'Your bestsellers, back in stock.', buttonText: 'Browse', buttonUrl: '/products' }
-    ] },
-    countdown: { eyebrow: 'Limited time', title: 'Sale ends soon', endDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 16), buttonText: 'Shop the sale', buttonUrl: '/products', bg: '#1a1a1a', color: '#ffffff' },
-    cta: { eyebrow: 'Limited time', title: 'Get 20% off everything', subtitle: 'Use code HELLO20 at checkout — this week only.', buttonText: 'Shop now', buttonUrl: '/products', bg: '#1a1a1a', color: '#ffffff' },
-    stats: { items: [{ value: '10k+', label: 'Happy customers' }, { value: '4.9★', label: 'Average rating' }, { value: '48h', label: 'Fast shipping' }, { value: '30d', label: 'Easy returns' }] },
-    'logo-cloud': { title: 'As seen in', items: [{ name: 'VOGUE', link: '' }, { name: 'GQ', link: '' }, { name: 'HYPEBEAST', link: '' }, { name: 'ESQUIRE', link: '' }] },
-    contact: { title: 'Get in touch', subtitle: 'Questions about an order, sizing, or returns? Send us a message.', email: '' },
-    'custom-html': { html: '<div>\n  <p>Your custom HTML here.</p>\n</div>' }
+const configOf = (section: any) => {
+  if (!section) return {}
+  if (typeof section.config === 'string') {
+    try { return JSON.parse(section.config) } catch { return {} }
   }
-  return JSON.parse(JSON.stringify(defaults[type] || {}))
+  return section.config || {}
 }
 
-// ============================================================
-// Theme presets
-// ============================================================
-// Shared with the theme library page — 24 full theme presets.
-// (imported below)
+const metaFor = (type: string) => SECTION_CATALOG.find(t => t.type === type)
 
-// ============================================================
-// Starter templates — one click fills the homepage
-// ============================================================
-const TEMPLATES = [
-  { id: 'starter', name: 'Starter Store', desc: 'Hero → products → story → reviews → newsletter', sections: ['hero', 'product-grid', 'image-text', 'testimonials', 'newsletter'] },
-  { id: 'launch', name: 'Product Launch', desc: 'Urgency-focused launch page', sections: ['announcement-bar', 'countdown', 'slideshow', 'product-grid', 'cta', 'newsletter'] },
-  { id: 'editorial', name: 'Editorial Brand', desc: 'Magazine-style brand page', sections: ['marquee', 'hero', 'rich-text', 'image-text', 'stats', 'faq', 'contact'] }
-]
+const subtitleFor = (section: any) => {
+  const c = configOf(section)
+  if (c.title) return String(c.title).replace(/<[^>]+>/g, '')
+  if (c.text) return String(c.text)
+  if (c.content) return String(c.content).replace(/<[^>]+>/g, '')
+  return ''
+}
 
-// ============================================================
-// Main builder
-// ============================================================
-export function PageBuilder({ initialSections, categories, pageType = 'home', pageId = null, themeName = 'Dawn' }) {
-  const [sections, setSections] = useState(initialSections)
-  const [selectedSection, setSelectedSection] = useState(null)
-  const [previewDevice, setPreviewDevice] = useState('desktop')
-  const [editorDevice, setEditorDevice] = useState('desktop')
-  const [draggedId, setDraggedId] = useState(null)
-  const [dragOverIndex, setDragOverIndex] = useState(null)
-  const [hasDraftChanges, setHasDraftChanges] = useState(false)
-  const [publishing, setPublishing] = useState(false)
-  const [paletteSearch, setPaletteSearch] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [showThemes, setShowThemes] = useState(false)
-  const [showTemplates, setShowTemplates] = useState(false)
-  const [showLivePreview, setShowLivePreview] = useState(false)
-  const [liveDevice, setLiveDevice] = useState('desktop')
-  const [applyingTheme, setApplyingTheme] = useState(null)
+export function PageBuilder({
+  initialSections,
+  categories,
+  pageType = 'home',
+  pageId = null,
+  themeName = 'Dawn',
+  pageLabel = 'Home page',
+  publicPath = '/',
+  initialDirty = false,
+  pages = []
+}) {
+  const router = useRouter()
+  const [sections, setSections] = useState<any[]>(initialSections)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [device, setDevice] = useState('desktop')
+  const [mode, setMode] = useState<'edit' | 'preview'>('edit')
+  const [leftTab, setLeftTab] = useState<'sections' | 'add'>('sections')
   const [rightTab, setRightTab] = useState('content')
+  const [dirty, setDirty] = useState(initialDirty)
+  const [publishing, setPublishing] = useState(false)
+  const [saving, setSaving] = useState(0)
+  const [paletteSearch, setPaletteSearch] = useState('')
+  const [addingType, setAddingType] = useState<string | null>(null)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [paletteOver, setPaletteOver] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [previewKey, setPreviewKey] = useState(0)
+  const [host, setHost] = useState('your-store')
 
-  // Undo/redo for config edits
-  const historyRef = useRef([])
-  const futureRef = useRef([])
+  const historyRef = useRef<string[]>([])
+  const futureRef = useRef<string[]>([])
   const [histCount, setHistCount] = useState(0)
   const [futureCount, setFutureCount] = useState(0)
+  const timersRef = useRef<Record<string, any>>({})
 
-  const pushHistory = () => {
+  const selected = sections.find(s => s.id === selectedId) || null
+  const deviceMeta = DEVICES.find(d => d.id === device) || DEVICES[0]
+
+  useEffect(() => {
+    setHost(window.location.host)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const pushHistory = useCallback(() => {
     historyRef.current.push(JSON.stringify(sections))
-    if (historyRef.current.length > 50) historyRef.current.shift()
+    if (historyRef.current.length > 60) historyRef.current.shift()
     futureRef.current = []
     setHistCount(historyRef.current.length)
     setFutureCount(0)
+  }, [sections])
+
+  const flushSections = useCallback(async (list: any[]) => {
+    await Promise.all(list.map((s, i) =>
+      fetch(`/api/admin/sections/${s.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: configOf(s), sortOrder: i })
+      }).catch(() => null)
+    ))
+  }, [])
+
+  const scheduleSave = useCallback((id: string, config: any) => {
+    setSaving(v => v + 1)
+    clearTimeout(timersRef.current[id])
+    timersRef.current[id] = setTimeout(async () => {
+      try {
+        await fetch(`/api/admin/sections/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config })
+        })
+      } catch (e) {
+        console.error('Autosave failed', e)
+      } finally {
+        setSaving(v => Math.max(0, v - 1))
+      }
+    }, 650)
+  }, [])
+
+  const updateConfig = (id: string, config: any) => {
+    pushHistory()
+    setSections(prev => prev.map(s => s.id === id ? { ...s, config } : s))
+    scheduleSave(id, config)
+    setDirty(true)
   }
 
-  const applySnapshot = (snapshot) => {
-    setSections(JSON.parse(snapshot))
-    setHasDraftChanges(true)
+  const applySnapshot = (snapshot: string) => {
+    const next = JSON.parse(snapshot)
+    setSections(next)
+    setDirty(true)
+    flushSections(next)
   }
 
   const undo = () => {
-    if (historyRef.current.length === 0) return
+    if (!historyRef.current.length) return
     futureRef.current.push(JSON.stringify(sections))
-    applySnapshot(historyRef.current.pop())
-    setHistCount(historyRef.current.length)
-    setFutureCount(futureRef.current.length)
-  }
-  const redo = () => {
-    if (futureRef.current.length === 0) return
-    historyRef.current.push(JSON.stringify(sections))
-    applySnapshot(futureRef.current.pop())
+    applySnapshot(historyRef.current.pop() as string)
     setHistCount(historyRef.current.length)
     setFutureCount(futureRef.current.length)
   }
 
-  // Ctrl+Z / Ctrl+Shift+Z
+  const redo = () => {
+    if (!futureRef.current.length) return
+    historyRef.current.push(JSON.stringify(sections))
+    applySnapshot(futureRef.current.pop() as string)
+    setHistCount(historyRef.current.length)
+    setFutureCount(futureRef.current.length)
+  }
+
   useEffect(() => {
     const h = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) {
         e.preventDefault()
         if (e.shiftKey) redo(); else undo()
       }
+      if (e.key === 'Escape') setSelectedId(null)
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   })
 
-  // Autosave: debounced save of the edited section's config
-  const autosaveTimerRef = useRef(null)
-  const autosave = useCallback((id, config) => {
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current)
-    autosaveTimerRef.current = setTimeout(async () => {
-      try {
-        const r = await fetch(`/api/admin/sections/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ config })
-        })
-        if (r.ok) setHasDraftChanges(true)
-      } catch (e) {
-        console.error('Autosave failed:', e)
-      }
-    }, 1200)
-  }, [])
-
-  const updateSectionConfig = (id, config) => {
-    pushHistory()
-    setSections(prev => prev.map(s => s.id === id ? { ...s, config } : s))
-    autosave(id, config)
+  const persistOrder = (ordered: any[]) => {
+    Promise.all(ordered.map((s, i) =>
+      fetch(`/api/admin/sections/${s.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sortOrder: i })
+      })
+    ))
   }
 
-  const addSection = async (type, insertAt = null) => {
+  const addSection = async (type: string, index = sections.length) => {
+    setAddingType(type)
     try {
-      const sortOrder = insertAt !== null ? insertAt : sections.length
       const r = await fetch('/api/admin/sections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pageType, pageId, sectionType: type,
-          config: defaultConfig(type), sortOrder, isVisible: true
+          config: defaultConfig(type), sortOrder: index, isVisible: true
         })
       })
-      if (r.ok) {
-        const d = await r.json()
-        const newSec = { ...d.section, config: typeof d.section.config === 'string' ? JSON.parse(d.section.config) : d.section.config }
-        setSections(prev => {
-          const updated = insertAt !== null
-            ? [...prev.slice(0, insertAt), newSec, ...prev.slice(insertAt)]
-            : [...prev, newSec]
-          return updated.map((s, i) => ({ ...s, sortOrder: i }))
-        })
-        setSelectedSection(newSec.id)
-        setRightTab('content')
-        setHasDraftChanges(true)
-        toast.success('Section added — click Publish to make it live')
-        setAdding(false)
-      } else throw new Error('Failed to add section')
-    } catch (e) {
-      toast.error('Failed', e.message)
-    }
-  }
-
-  const applyTemplate = async (template) => {
-    if (sections.length > 0 && !confirm(`Replace the current ${sections.length} section(s) with the "${template.name}" template? Existing sections stay in the database but this page will show the template. Ask an admin to delete unneeded ones if desired.`)) return
-    setShowTemplates(false)
-    for (const type of template.sections) {
-      await addSectionSilent(type)
-    }
-    toast.success('Template loaded', `${template.sections.length} sections added — click Publish to go live`)
-  }
-
-  // Like addSection but without toasts/dialog closes (used by templates)
-  const addSectionSilent = async (type) => {
-    try {
-      const r = await fetch('/api/admin/sections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageType, pageId, sectionType: type, config: defaultConfig(type), sortOrder: 999, isVisible: true })
+      if (!r.ok) throw new Error('Could not add section')
+      const d = await r.json()
+      const newSection = { ...d.section, config: configOf(d.section) }
+      setSections(prev => {
+        const next = [...prev.slice(0, index), newSection, ...prev.slice(index)]
+        return next.map((s, i) => ({ ...s, sortOrder: i }))
       })
-      if (r.ok) {
-        const d = await r.json()
-        const newSec = { ...d.section, config: typeof d.section.config === 'string' ? JSON.parse(d.section.config) : d.section.config }
-        setSections(prev => [...prev, newSec])
-        setHasDraftChanges(true)
-      }
-    } catch (e) { console.error(e) }
-  }
-
-  const applyTheme = async (preset) => {
-    setApplyingTheme(preset.id)
-    try {
-      const r = await fetch('/api/admin/appearance', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(preset.settings)
-      })
-      if (r.ok) toast.success(`Theme applied: ${preset.name}`, 'Open the storefront to see it live')
-      else throw new Error('Failed')
-    } catch (e) {
-      toast.error('Theme failed', e.message)
+      setSelectedId(newSection.id)
+      setRightTab('content')
+      setLeftTab('sections')
+      setDirty(true)
+      toast.success(`${metaFor(type)?.label || 'Section'} added`, 'Drag it to position — then publish')
+    } catch (e: any) {
+      toast.error('Failed to add section', e.message)
     } finally {
-      setApplyingTheme(null)
+      setAddingType(null)
     }
   }
 
-  const handlePaletteDrop = async (e, targetIndex) => {
-    e.preventDefault()
-    const sectionType = e.dataTransfer.getData('section-type')
-    setDragOverIndex(null)
-    if (!sectionType) return
-    await addSection(sectionType, targetIndex)
+  const applyTemplate = async (template: any) => {
+    setShowTemplates(false)
+    const created: any[] = []
+    for (const type of template.sections) {
+      try {
+        const r = await fetch('/api/admin/sections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pageType, pageId, sectionType: type, config: defaultConfig(type), sortOrder: 999, isVisible: true })
+        })
+        if (r.ok) {
+          const d = await r.json()
+          created.push({ ...d.section, config: configOf(d.section) })
+        }
+      } catch {}
+    }
+    if (created.length) {
+      setSections(prev => [...prev, ...created].map((s, i) => ({ ...s, sortOrder: i })))
+      persistOrder([...sections, ...created])
+      setDirty(true)
+      setSelectedId(created[0].id)
+      toast.success(`${template.name} applied`, `${created.length} sections added below`)
+    }
   }
 
-  const toggleVisible = async (id) => {
+  const toggleVisible = async (id: string) => {
     const section = sections.find(s => s.id === id)
-    const newVisible = !section.isVisible
-    setSections(prev => prev.map(s => s.id === id ? { ...s, isVisible: newVisible } : s))
+    if (!section) return
+    const next = !section.isVisible
+    setSections(prev => prev.map(s => s.id === id ? { ...s, isVisible: next } : s))
+    setDirty(true)
     try {
       await fetch(`/api/admin/sections/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isVisible: newVisible })
+        body: JSON.stringify({ isVisible: next })
       })
-      setHasDraftChanges(true)
-    } catch (e) { toast.error('Toggle failed') }
+    } catch { toast.error('Could not update visibility') }
   }
 
-  const duplicateSection = async (id) => {
-    const section = sections.find(s => s.id === id)
-    if (!section) return
+  const duplicateSection = async (id: string) => {
+    const idx = sections.findIndex(s => s.id === id)
+    if (idx < 0) return
     try {
       const r = await fetch(`/api/admin/sections/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ duplicate: true })
       })
-      if (r.ok) {
-        const d = await r.json()
-        setSections(prev => {
-          const idx = prev.findIndex(s => s.id === id)
-          const copy = { ...d.section, config: typeof d.section.config === 'string' ? JSON.parse(d.section.config) : d.section.config }
-          const updated = [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
-          return updated.map((s, i) => ({ ...s, sortOrder: i }))
-        })
-        setHasDraftChanges(true)
-        toast.success('Section duplicated')
-      }
-    } catch (e) { toast.error('Failed', e.message) }
-  }
-
-  const persistOrder = (ordered) => {
-    Promise.all(ordered.map(s =>
-      fetch(`/api/admin/sections/${s.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sortOrder: s.sortOrder })
+      if (!r.ok) throw new Error('Duplicate failed')
+      const d = await r.json()
+      const copy = { ...d.section, config: configOf(d.section) }
+      setSections(prev => {
+        const next = [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
+        const ordered = next.map((s, i) => ({ ...s, sortOrder: i }))
+        persistOrder(ordered)
+        return ordered
       })
-    ))
+      setSelectedId(copy.id)
+      setDirty(true)
+      toast.success('Section duplicated')
+    } catch (e: any) {
+      toast.error('Could not duplicate', e.message)
+    }
   }
 
-  const moveSection = (id, direction) => {
+  const moveSection = (id: string, dir: -1 | 1) => {
     const idx = sections.findIndex(s => s.id === id)
-    const newIdx = direction === 'up' ? idx - 1 : idx + 1
-    if (newIdx < 0 || newIdx >= sections.length) return
-    const reordered = [...sections]
-    const [moved] = reordered.splice(idx, 1)
-    reordered.splice(newIdx, 0, moved)
-    const withOrders = reordered.map((s, i) => ({ ...s, sortOrder: i }))
-    setSections(withOrders)
-    persistOrder(withOrders)
-    setHasDraftChanges(true)
+    const to = idx + dir
+    if (idx < 0 || to < 0 || to >= sections.length) return
+    pushHistory()
+    const next = arrayMove(sections, idx, to).map((s, i) => ({ ...s, sortOrder: i }))
+    setSections(next)
+    persistOrder(next)
+    setDirty(true)
   }
 
-  // Drag and drop reorder
-  const handleDragStart = (e, id) => {
-    setDraggedId(id)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', id)
-  }
-  const handleDropOn = (e, targetIndex) => {
-    e.preventDefault()
-    setDragOverIndex(null)
-    if (!draggedId) return
-    const draggedIdx = sections.findIndex(s => s.id === draggedId)
-    if (draggedIdx === -1) return
-    const reordered = [...sections]
-    const [moved] = reordered.splice(draggedIdx, 1)
-    reordered.splice(targetIndex > draggedIdx ? targetIndex - 1 : targetIndex, 0, moved)
-    const withOrders = reordered.map((s, i) => ({ ...s, sortOrder: i }))
-    setSections(withOrders)
-    setDraggedId(null)
-    persistOrder(withOrders)
-    setHasDraftChanges(true)
-  }
-
-  const delSection = async (id) => {
-    if (!confirm('Delete this section? It will be removed when you publish changes.')) return
+  const removeSection = async (id: string) => {
+    if (!confirm('Remove this section? It disappears from the storefront when you publish.')) return
     try {
       const r = await fetch(`/api/admin/sections/${id}`, { method: 'DELETE' })
-      if (r.ok) {
-        setSections(sections.filter(s => s.id !== id))
-        if (selectedSection === id) setSelectedSection(null)
-        setHasDraftChanges(true)
-        toast.success('Section removed — click Publish to make it permanent')
-      }
-    } catch (e) { toast.error('Failed') }
+      if (!r.ok) throw new Error('Delete failed')
+      setSections(prev => prev.filter(s => s.id !== id))
+      if (selectedId === id) setSelectedId(null)
+      setDirty(true)
+      toast.success('Section removed')
+    } catch (e: any) {
+      toast.error('Could not remove section', e.message)
+    }
   }
 
   const publishChanges = async () => {
     setPublishing(true)
     try {
+      await flushSections(sections)
       const r = await fetch('/api/admin/sections/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageType, pageId, action: 'publish' })
       })
-      if (r.ok) {
-        setHasDraftChanges(false)
-        toast.success('Changes published', 'Your storefront is now updated')
-      } else throw new Error('Publish failed')
-    } catch (e) {
+      if (!r.ok) throw new Error('Publish failed')
+      setDirty(false)
+      setPreviewKey(k => k + 1)
+      toast.success('Published', 'Your storefront is updated')
+      router.refresh()
+    } catch (e: any) {
       toast.error('Publish failed', e.message)
     } finally {
       setPublishing(false)
@@ -396,7 +328,7 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
   }
 
   const discardChanges = async () => {
-    if (!confirm('Discard all unpublished changes? This will revert to the last published version.')) return
+    if (!confirm('Discard all unpublished changes and restore the last published version?')) return
     setPublishing(true)
     try {
       const r = await fetch('/api/admin/sections/publish', {
@@ -404,1163 +336,691 @@ export function PageBuilder({ initialSections, categories, pageType = 'home', pa
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageType, pageId, action: 'discard' })
       })
-      if (r.ok) {
-        const params = new URLSearchParams({ pageType, includeDraft: 'false' })
-        if (pageId) params.set('pageId', pageId)
-        const sr = await fetch(`/api/admin/sections?${params}`)
-        const sd = await sr.json()
-        setSections(sd.sections.map(s => ({
-          ...s,
-          config: typeof s.config === 'string' ? JSON.parse(s.config) : s.config
-        })))
-        setHasDraftChanges(false)
-        setSelectedSection(null)
-        toast.success('Changes discarded')
-      }
-    } catch (e) {
+      if (!r.ok) throw new Error('Discard failed')
+      const params = new URLSearchParams({ pageType, includeDraft: 'false' })
+      if (pageId) params.set('pageId', pageId)
+      const sr = await fetch(`/api/admin/sections?${params}`)
+      const sd = await sr.json()
+      setSections(sd.sections.map((s: any) => ({ ...s, config: configOf(s) })))
+      setSelectedId(null)
+      setDirty(false)
+      setPreviewKey(k => k + 1)
+      toast.success('Changes discarded')
+    } catch (e: any) {
       toast.error('Discard failed', e.message)
     } finally {
       setPublishing(false)
     }
   }
 
-  const selectedSectionData = sections.find(s => s.id === selectedSection)
-  const isMobilePreview = previewDevice === 'mobile'
-  const isTabletPreview = previewDevice === 'tablet'
+  const openPreview = async () => {
+    await flushSections(sections)
+    setMode('preview')
+    setSelectedId(null)
+    setPreviewKey(k => k + 1)
+  }
 
-  const previewWidth = previewDevice === 'mobile' ? 'max-w-[375px]' : previewDevice === 'tablet' ? 'max-w-[768px]' : 'max-w-full'
-  const livePreviewWidth = liveDevice === 'mobile' ? 375 : liveDevice === 'tablet' ? 768 : 1200
+  const onDragEnd = ({ active, over }) => {
+    setActiveDragId(null)
+    if (!over || active.id === over.id) return
+    const from = sections.findIndex(s => s.id === active.id)
+    const to = sections.findIndex(s => s.id === over.id)
+    if (from < 0 || to < 0) return
+    pushHistory()
+    const next = arrayMove(sections, from, to).map((s, i) => ({ ...s, sortOrder: i }))
+    setSections(next)
+    persistOrder(next)
+    setDirty(true)
+  }
+
+  const onPaletteDrop = async (e) => {
+    e.preventDefault()
+    setPaletteOver(false)
+    const type = e.dataTransfer.getData('application/x-section-type') || e.dataTransfer.getData('text/plain')
+    if (type && metaFor(type)) await addSection(type, sections.length)
+  }
+
+  const paletteItems = useMemo(() => {
+    const q = paletteSearch.trim().toLowerCase()
+    return SECTION_CATALOG.filter(t => !q || t.label.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+  }, [paletteSearch])
+
+  const pageValue = pageType === 'custom' && pageId ? `custom:${pageId}` : 'home'
+  const switchPage = (value: string) => {
+    if (value === 'home') router.push('/admin/builder')
+    else {
+      const id = value.split(':')[1]
+      router.push(`/admin/builder?pageType=custom&pageId=${id}`)
+    }
+  }
+
+  const previewSrc = `${publicPath}${publicPath.includes('?') ? '&' : '?'}preview=1&t=${previewKey}`
 
   return (
-    <div className="flex flex-col xl:flex-row gap-4 items-start">
-      {/* ===== Left sidebar: structure tree (like Shopify) ===== */}
-      <div className="w-full xl:w-[248px] shrink-0">
-        <div className="xl:sticky xl:top-[72px] space-y-3">
-          <Card className="p-0 overflow-hidden border-[#e3e3e3] shadow-sm">
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#e3e3e3]">
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-wide text-[#8a8a8a]">Theme</p>
-                <p className="text-[13px] font-semibold text-[#1a1a1a] truncate">{themeName}</p>
-              </div>
-              <a href="/admin/themes" className="text-[11px] font-medium text-[#005bd3] hover:underline shrink-0">Change</a>
-            </div>
-            <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Sections</h3>
-              <span className="text-[10px] text-[#8a8a8a]">{sections.length}</span>
-            </div>
-            <div className="space-y-0.5 max-h-[42vh] overflow-y-auto px-2 pb-2">
-              {sections.length === 0 && (
-                <p className="text-xs text-muted-foreground px-1 pb-1">Empty page — add a section below.</p>
-              )}
-              {sections.map((section, idx) => {
-                const meta = SECTION_CATALOG.find(t => t.type === section.sectionType)
-                const Icon = meta?.icon || Code
-                const isSelected = selectedSection === section.id
-                return (
-                  <div
-                    key={section.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, section.id)}
-                    onDragOver={(e) => { e.preventDefault(); setDragOverIndex(idx) }}
-                    onDrop={(e) => { e.preventDefault(); handleDropOn(e, idx); setDragOverIndex(null) }}
-                    onDragEnd={() => { setDraggedId(null); setDragOverIndex(null) }}
-                    onClick={() => { setSelectedSection(section.id); setRightTab('content') }}
-                    className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${isSelected ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-300' : 'hover:bg-muted'} ${dragOverIndex === idx && draggedId !== section.id ? 'border-t-2 border-t-blue-400' : ''} ${!section.isVisible ? 'opacity-50' : ''}`}
-                  >
-                    <GripVertical className="h-3 w-3 text-muted-foreground/50 cursor-grab shrink-0" />
-                    <Icon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="text-xs font-medium truncate flex-1">{meta?.label || section.sectionType}</span>
-                    {!section.isVisible && <EyeOff className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                  </div>
-                )
-              })}
-            </div>
-            <div className="p-2 pt-0">
-              <button onClick={() => setAdding(true)} className="w-full flex items-center justify-center gap-1.5 px-2 py-2 text-[12px] font-medium text-[#303030] rounded-lg border border-dashed border-[#c9c9c9] hover:border-[#8a8a8a] hover:bg-[#fafafa] transition-colors">
-                <Plus className="h-3.5 w-3.5" /> Add section
-              </button>
-            </div>
-          </Card>
-
-          <Card className="p-2 space-y-0.5 border-[#e3e3e3] shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#8a8a8a] px-2 pt-1 pb-1">Theme settings</p>
-            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]" onClick={() => setShowThemes(true)}>
-              <Palette className="h-3.5 w-3.5 text-[#616161]" /> Theme library
-            </button>
-            <a href="/admin/appearance" className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]">
-              <Paintbrush className="h-3.5 w-3.5 text-[#616161]" /> Colors & typography
-            </a>
-            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]" onClick={() => setShowTemplates(true)}>
-              <Layers className="h-3.5 w-3.5 text-[#616161]" /> Starter templates
-            </button>
-            <button className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium rounded-lg hover:bg-[#f1f1f1] text-[#303030]" onClick={() => setShowLivePreview(true)}>
-              <ExternalLink className="h-3.5 w-3.5 text-[#616161]" /> Preview store
-            </button>
-          </Card>
-        </div>
-      </div>
-
-      {/* ===== Center: canvas ===== */}
-      <div className="flex-1 min-w-0 space-y-4">
-        {/* Toolbar — dark Shopify-style editor chrome */}
-        <div className="flex items-center justify-between gap-2 flex-wrap sticky top-[56px] z-20 bg-[#1a1a1a] text-white rounded-xl px-2 py-1.5 shadow-sm">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <a href="/admin/themes" className="p-1.5 rounded-md hover:bg-white/10 text-white/80" title="Back to themes">
-              <X className="h-4 w-4" />
-            </a>
-            <span className="text-[12px] font-medium truncate">
-              {pageType === 'home' ? 'Home page' : 'Custom page'}
-            </span>
-            {hasDraftChanges && (
-              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-medium bg-amber-400/15 text-amber-200 border border-amber-300/20 rounded-full px-2 py-0.5">
-                Unpublished changes
-              </span>
-            )}
+    <div className="fixed inset-0 z-[60] flex flex-col bg-[#f1f1f1] admin-shell">
+      {/* ===== Top bar ===== */}
+      <header className="h-14 shrink-0 bg-[#1a1a1a] text-white flex items-center justify-between gap-3 px-3 md:px-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/admin/themes" className="p-1.5 rounded-md hover:bg-white/10 text-white/70 hover:text-white" title="Close editor">
+            <X className="h-4 w-4" />
+          </Link>
+          <span className="hidden sm:block h-6 w-px bg-white/15" />
+          <div className="relative min-w-0">
+            <select
+              value={pageValue}
+              onChange={(e) => switchPage(e.target.value)}
+              className="appearance-none bg-transparent text-[13px] font-medium text-white pr-6 pl-1 py-1 rounded-md hover:bg-white/10 cursor-pointer outline-none max-w-[220px] truncate"
+              aria-label="Choose page to edit"
+            >
+              <option value="home" className="text-[#1a1a1a]">Home page</option>
+              {pages.map((p: any) => (
+                <option key={p.id} value={`custom:${p.id}`} className="text-[#1a1a1a]">
+                  {p.title}{p.status === 'DRAFT' ? ' (draft)' : ''}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-white/60 pointer-events-none" />
           </div>
-          <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5">
-            {[
-              ['desktop', Monitor], ['tablet', Tablet], ['mobile', Smartphone]
-            ].map(([key, Icon]) => (
+          <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-white/50 border border-white/15 rounded px-1.5 py-0.5">
+            {themeName}
+          </span>
+          {dirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" title="Unpublished changes" />}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5 bg-white/10 rounded-lg p-0.5">
+            {DEVICES.map(d => (
               <button
-                key={key}
-                onClick={() => setPreviewDevice(key)}
-                className={`p-1.5 rounded-md transition-colors ${previewDevice === key ? 'bg-white text-[#1a1a1a]' : 'text-white/70 hover:text-white hover:bg-white/10'}`}
-                title={`${key} preview`}
+                key={d.id}
+                onClick={() => setDevice(d.id)}
+                title={`${d.label} preview`}
+                className={cn('p-1.5 rounded-md transition-colors', device === d.id ? 'bg-white text-[#1a1a1a]' : 'text-white/70 hover:text-white')}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <d.icon className="h-3.5 w-3.5" />
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={undo} disabled={histCount === 0} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Undo (Ctrl+Z)">
-              <Undo2 className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={redo} disabled={futureCount === 0} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Redo (Ctrl+Shift+Z)">
-              <Redo2 className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={discardChanges} disabled={!hasDraftChanges || publishing} className="hidden md:inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] hover:bg-white/10 disabled:opacity-30" title="Discard unpublished changes">
-              <RotateCcw className="h-3.5 w-3.5" /> Discard
-            </button>
-            <a href="/" target="_blank" className="hidden lg:inline-flex items-center gap-1 h-7 px-2 rounded-md text-[12px] hover:bg-white/10 text-white/80">
-              <Eye className="h-3.5 w-3.5" /> Preview
-            </a>
-            <button
-              onClick={publishChanges}
-              disabled={!hasDraftChanges || publishing}
-              className="inline-flex items-center gap-1.5 h-7 px-3 rounded-lg bg-white text-[#1a1a1a] text-[12px] font-semibold hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Upload className="h-3.5 w-3.5" /> {publishing ? 'Publishing…' : 'Publish'}
-            </button>
-          </div>
+          <span className="hidden sm:block h-6 w-px bg-white/15 mx-0.5" />
+          <button onClick={undo} disabled={!histCount} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Undo (⌘Z)">
+            <Undo2 className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={redo} disabled={!futureCount} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Redo (⇧⌘Z)">
+            <Redo2 className="h-3.5 w-3.5" />
+          </button>
         </div>
 
-        {/* Add section button */}
-        <Dialog open={adding} onOpenChange={setAdding}>
-          <DialogTrigger asChild>
-            <Button variant="outline" className="w-full border-dashed text-[#303030]">
-              <Plus className="h-4 w-4 mr-2" /> Add section
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader><DialogTitle>Add a section</DialogTitle></DialogHeader>
-            <div className="relative -mt-1 mb-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input value={paletteSearch} onChange={(e) => setPaletteSearch(e.target.value)} placeholder="Search sections…" className="h-9 pl-8 text-sm" />
-            </div>
-            {GROUPS.map(group => {
-              const dialogItems = SECTION_CATALOG.filter(t => t.group === group && (!paletteSearch || t.label.toLowerCase().includes(paletteSearch.toLowerCase())))
-              if (dialogItems.length === 0) return null
-              return (
-              <div key={group} className="mb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">{group}</p>
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {dialogItems.map(t => (
-                    <button key={t.type} onClick={() => addSection(t.type)} className="text-left p-4 rounded-md border border-border hover:border-foreground/40 hover:bg-muted/30 transition-colors group">
-                      <div className="flex items-start gap-3">
-                        <div className="h-9 w-9 rounded-lg bg-muted group-hover:bg-foreground group-hover:text-background flex items-center justify-center transition-colors shrink-0">
-                          <t.icon className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{t.label}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{t.description}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              )
-            })}
-          </DialogContent>
-        </Dialog>
-
-        {/* Preview canvas */}
-        <div className={`mx-auto transition-all w-full ${previewWidth}`}>
-          <div
-            className="rounded-xl border border-[#e3e3e3] overflow-hidden bg-white shadow-sm"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => handlePaletteDrop(e, sections.length)}
+        <div className="flex items-center gap-1.5">
+          <span className="hidden md:flex items-center gap-1 text-[11px] text-white/60 mr-1">
+            {saving > 0 ? <><Save className="h-3 w-3 animate-pulse" /> Saving…</> : !dirty ? <><Check className="h-3 w-3 text-emerald-400" /> Saved</> : null}
+          </span>
+          <button
+            onClick={discardChanges}
+            disabled={!dirty || publishing}
+            className="hidden md:inline-flex p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30"
+            title="Discard unpublished changes"
           >
-            {sections.length === 0 ? (
-              <div className="p-16 text-center">
-                <Layout className="h-10 w-10 text-muted-foreground/50 mx-auto mb-3" />
-                <h3 className="font-semibold">Your page is empty</h3>
-                <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
-                  Drag sections from the left panel, click one to add it, or start with a{' '}
-                  <button className="underline font-medium" onClick={() => setShowTemplates(true)}>starter template</button>.
-                </p>
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => mode === 'preview' ? setMode('edit') : openPreview()}
+            className={cn(
+              'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border transition-colors',
+              mode === 'preview' ? 'bg-white text-[#1a1a1a] border-white' : 'border-white/25 hover:bg-white/10'
+            )}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{mode === 'preview' ? 'Exit preview' : 'Preview'}</span>
+          </button>
+          <a
+            href={publicPath}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden lg:inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-white/25 text-[12px] hover:bg-white/10"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Store
+          </a>
+          <button
+            onClick={publishChanges}
+            disabled={publishing || !dirty}
+            className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-white text-[#1a1a1a] text-[12px] font-semibold hover:bg-white/90 disabled:opacity-40"
+          >
+            <Upload className="h-3.5 w-3.5" /> {publishing ? 'Publishing…' : 'Publish'}
+          </button>
+        </div>
+      </header>
+
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+        {/* ===== Left panel ===== */}
+        <aside className="w-full lg:w-[280px] shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-[#e3e3e3] flex flex-col lg:min-h-0">
+          <div className="flex items-center gap-1 px-2 pt-2">
+            <button
+              onClick={() => setLeftTab('sections')}
+              className={cn('flex-1 h-8 rounded-md text-[12px] font-medium transition-colors', leftTab === 'sections' ? 'bg-[#1a1a1a] text-white' : 'text-[#303030] hover:bg-[#f1f1f1]')}
+            >
+              Sections
+            </button>
+            <button
+              onClick={() => setLeftTab('add')}
+              className={cn('flex-1 h-8 rounded-md text-[12px] font-medium transition-colors', leftTab === 'add' ? 'bg-[#1a1a1a] text-white' : 'text-[#303030] hover:bg-[#f1f1f1]')}
+            >
+              Add
+            </button>
+          </div>
+
+          {leftTab === 'sections' ? (
+            <div className="flex-1 lg:min-h-0 flex flex-col">
+              <div className="px-3 py-2.5 border-b border-[#efefef]">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Page structure</p>
+                  <span className="text-[10px] text-[#8a8a8a]">{sections.length}</span>
+                </div>
+                <p className="text-[11px] text-[#8a8a8a] mt-0.5 truncate">{pageLabel}</p>
               </div>
-            ) : (
-              <div className="divide-y divide-border">
-                <DropZone onDrop={(e) => handleDropOn(e, 0)} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverIndex(0) }} />
+
+              <div className="flex-1 lg:overflow-y-auto p-2 space-y-0.5">
+                <GlobalRow label="Header" hint="Navigation & branding" />
+                {sections.length === 0 && (
+                  <div className="px-2 py-6 text-center">
+                    <LayoutIcon />
+                    <p className="text-[12px] font-medium text-[#1a1a1a] mt-2">Nothing here yet</p>
+                    <button onClick={() => setLeftTab('add')} className="text-[11px] text-[#005bd3] hover:underline mt-0.5">Add your first section</button>
+                  </div>
+                )}
                 {sections.map((section, idx) => {
-                  const sectionType = SECTION_CATALOG.find(t => t.type === section.sectionType)
-                  const Icon = sectionType?.icon || Code
-                  const isSelected = selectedSection === section.id
+                  const meta = metaFor(section.sectionType)
+                  const Icon = meta?.icon || Layers
+                  const isSelected = selectedId === section.id
                   return (
-                    <div key={section.id}>
-                      <div
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, section.id)}
-                        onDragOver={(e) => { e.preventDefault(); setDragOverIndex(idx) }}
-                        onDrop={(e) => handleDropOn(e, idx)}
-                        onDragEnd={() => { setDraggedId(null); setDragOverIndex(null) }}
-                        className={`relative group transition-all ring-inset ${isSelected ? 'ring-2 ring-blue-500 z-[1]' : 'hover:ring-1 hover:ring-blue-400/60'} ${dragOverIndex === idx && draggedId !== section.id ? 'border-t-4 border-t-blue-500' : ''} ${!section.isVisible ? 'opacity-50' : ''}`}
-                      >
-                        {/* Shopify-style label chip */}
-                        <div className={`absolute top-0 left-0 z-20 text-[10px] font-medium pl-1.5 pr-2.5 py-1 rounded-br-md flex items-center gap-1.5 shadow-sm pointer-events-none ${isSelected ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800 opacity-0 group-hover:opacity-100'}`}>
-                          <GripVertical className="h-3 w-3" />
-                          <Icon className="h-3 w-3" /> {sectionType?.label || section.sectionType}
-                          {!section.isVisible && <span className="opacity-75">· hidden</span>}
-                        </div>
-                        {/* Floating action toolbar (like Shopify) */}
-                        {isSelected && (
-                          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 bg-zinc-900/95 text-white rounded-lg shadow-lg px-1 py-0.5">
-                            <TbBtn onClick={() => moveSection(section.id, 'up')} disabled={idx === 0} title="Move up"><ArrowUp className="h-3.5 w-3.5" /></TbBtn>
-                            <TbBtn onClick={() => moveSection(section.id, 'down')} disabled={idx === sections.length - 1} title="Move down"><ArrowDown className="h-3.5 w-3.5" /></TbBtn>
-                            <span className="w-px h-4 bg-white/20 mx-0.5" />
-                            <TbBtn onClick={() => duplicateSection(section.id)} title="Duplicate"><Copy className="h-3.5 w-3.5" /></TbBtn>
-                            <TbBtn onClick={() => toggleVisible(section.id)} title={section.isVisible ? 'Hide' : 'Show'}>{section.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</TbBtn>
-                            <span className="w-px h-4 bg-white/20 mx-0.5" />
-                            <TbBtn onClick={() => delSection(section.id)} title="Remove" danger><Trash2 className="h-3.5 w-3.5" /></TbBtn>
-                          </div>
+                    <div
+                      key={section.id}
+                      onClick={() => { setSelectedId(section.id); setRightTab('content'); setMode('edit') }}
+                      className={cn(
+                        'group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer border',
+                        isSelected ? 'bg-[#f0f6ff] border-[#b5d1ff]' : 'border-transparent hover:bg-[#f7f7f7]',
+                        !section.isVisible && 'opacity-55'
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5 text-[#616161] shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12px] font-medium text-[#1a1a1a] truncate leading-tight">{meta?.label || section.sectionType}</p>
+                        {subtitleFor(section) && (
+                          <p className="text-[10px] text-[#8a8a8a] truncate leading-tight mt-0.5">{subtitleFor(section)}</p>
                         )}
-                        {/* Live preview */}
-                        <div className="cursor-pointer" onClick={() => { setSelectedSection(section.id); setRightTab('content') }}>
-                          <SectionPreview section={section} categories={categories} mobile={isMobilePreview} tablet={isTabletPreview} />
-                        </div>
                       </div>
-                      <DropZone onDrop={(e) => handleDropOn(e, idx + 1)} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverIndex(idx + 1) }} />
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleVisible(section.id) }}
+                        className="p-1 rounded text-[#8a8a8a] hover:text-[#1a1a1a] hover:bg-[#ececec] opacity-0 group-hover:opacity-100"
+                        title={section.isVisible ? 'Hide section' : 'Show section'}
+                        aria-label={section.isVisible ? 'Hide section' : 'Show section'}
+                      >
+                        {section.isVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                      </button>
                     </div>
                   )
                 })}
+                <GlobalRow label="Footer" hint="Navigation & branding" />
               </div>
-            )}
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground text-center">
-          Drag to reorder · Click a section to edit · Edits auto-save as drafts · Publish to go live · Ctrl+Z to undo
-        </p>
-      </div>
 
-      {/* ===== Right: inspector ===== */}
-      {selectedSectionData && (
-        <div className="w-full xl:w-[320px] shrink-0">
-          <div className="xl:sticky xl:top-[72px]">
-            <Card className="p-0 border-[#e3e3e3] shadow-sm">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <div className="flex items-center gap-2">
-                  <Settings2 className="h-4 w-4" />
-                  <h3 className="text-sm font-semibold">{SECTION_CATALOG.find(t => t.type === selectedSectionData.sectionType)?.label || 'Section'}</h3>
+              <div className="p-2 border-t border-[#efefef] space-y-1.5">
+                <button
+                  onClick={() => setLeftTab('add')}
+                  className="w-full flex items-center justify-center gap-1.5 h-8 rounded-lg border border-dashed border-[#c9c9c9] text-[12px] font-medium text-[#303030] hover:border-[#8a8a8a] hover:bg-[#fafafa]"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add section
+                </button>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary !h-7 !text-[11px]">
+                    <Sparkles className="h-3 w-3" /> Templates
+                  </button>
+                  <Link href="/admin/appearance" className="sf-btn sf-btn-secondary !h-7 !text-[11px]">
+                    <Settings2 className="h-3 w-3" /> Styles
+                  </Link>
                 </div>
-                <button onClick={() => setSelectedSection(null)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
               </div>
-              <div className="flex border-b border-[#e3e3e3]">
-                <button onClick={() => setRightTab('content')} className={`flex-1 px-3 py-2 text-xs font-medium ${rightTab === 'content' ? 'border-b-2 border-foreground -mb-px' : 'text-muted-foreground hover:text-foreground'}`}>Content</button>
-                <button onClick={() => setRightTab('design')} className={`flex-1 px-3 py-2 text-xs font-medium flex items-center justify-center gap-1.5 ${rightTab === 'design' ? 'border-b-2 border-foreground -mb-px' : 'text-muted-foreground hover:text-foreground'}`}>
-                  <Paintbrush className="h-3.5 w-3.5" /> Design
+            </div>
+          ) : (
+            <div className="flex-1 lg:min-h-0 flex flex-col">
+              <div className="p-2 border-b border-[#efefef]">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8a8a8a]" />
+                  <input
+                    value={paletteSearch}
+                    onChange={(e) => setPaletteSearch(e.target.value)}
+                    placeholder="Search blocks"
+                    className="sf-input pl-8"
+                    aria-label="Search blocks"
+                  />
+                </div>
+                <p className="text-[10px] text-[#8a8a8a] mt-1.5 flex items-center gap-1">
+                  <MousePointerClick className="h-3 w-3" /> Click to add, or drag onto the page
+                </p>
+              </div>
+              <div className="flex-1 lg:overflow-y-auto p-2 space-y-3">
+                {GROUPS.map(group => {
+                  const items = paletteItems.filter(t => t.group === group)
+                  if (!items.length) return null
+                  return (
+                    <div key={group}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8a8a8a] px-1 mb-1">{group}</p>
+                      <div className="space-y-1">
+                        {items.map(t => (
+                          <button
+                            key={t.type}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('application/x-section-type', t.type)
+                              e.dataTransfer.setData('text/plain', t.type)
+                              e.dataTransfer.effectAllowed = 'copy'
+                            }}
+                            onDragEnd={() => setPaletteOver(false)}
+                            onClick={() => addSection(t.type)}
+                            disabled={addingType === t.type}
+                            className="w-full flex items-center gap-2.5 p-2 rounded-lg border border-[#e9e9e9] bg-white text-left hover:border-[#b5b5b5] hover:shadow-sm transition-all disabled:opacity-50 cursor-grab active:cursor-grabbing"
+                          >
+                            <span className="h-8 w-8 rounded-md bg-[#f4f4f4] flex items-center justify-center shrink-0">
+                              <t.icon className="h-4 w-4 text-[#303030]" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[12px] font-medium text-[#1a1a1a] truncate">{t.label}</span>
+                              <span className="block text-[10px] text-[#8a8a8a] truncate">{t.description}</span>
+                            </span>
+                            {addingType === t.type ? (
+                              <RefreshCw className="h-3 w-3 animate-spin text-[#8a8a8a]" />
+                            ) : (
+                              <Plus className="h-3.5 w-3.5 text-[#8a8a8a] shrink-0" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+                {paletteItems.length === 0 && (
+                  <p className="text-[12px] text-[#8a8a8a] text-center py-6">No blocks match “{paletteSearch}”.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* ===== Canvas ===== */}
+        <main className="flex-1 min-w-0 flex flex-col bg-[#e9e9e9]">
+          <div className="flex-1 min-h-0 overflow-auto p-3 md:p-6">
+            <div
+              className="mx-auto transition-[max-width] duration-300"
+              style={{ maxWidth: deviceMeta.width === '100%' ? '100%' : deviceMeta.width }}
+            >
+              {/* Browser chrome */}
+              <div className="flex items-center gap-2 h-9 px-3 rounded-t-xl bg-[#f7f7f7] border border-[#dcdcdc] border-b-0">
+                <div className="flex gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  <span className="inline-flex items-center gap-1.5 max-w-full px-3 h-6 rounded-md bg-white border border-[#e3e3e3] text-[11px] text-[#616161] truncate">
+                    <Lock className="h-2.5 w-2.5" />
+                    {host}{publicPath}
+                    {mode === 'preview' && <span className="text-[#8a8a8a]">{pageType === 'home' ? ' · draft preview' : ' · published'}</span>}
+                  </span>
+                </div>
+                <button onClick={() => setPreviewKey(k => k + 1)} className="p-1 rounded hover:bg-[#e9e9e9]" title="Reload preview" aria-label="Reload preview">
+                  <RefreshCw className="h-3 w-3 text-[#616161]" />
                 </button>
               </div>
-              <div className="p-4 max-h-[58vh] overflow-y-auto">
+
+              {mode === 'preview' ? (
+                <div className="bg-white border border-[#dcdcdc] rounded-b-xl overflow-hidden">
+                  <iframe
+                    key={previewKey}
+                    src={previewSrc}
+                    title="Storefront preview"
+                    className="w-full bg-white block"
+                    style={{ height: 'calc(100vh - 200px)', minHeight: 480 }}
+                  />
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    'bg-white border border-[#dcdcdc] rounded-b-xl overflow-hidden relative',
+                    paletteOver && 'ring-2 ring-[#005bd3]'
+                  )}
+                  onDragOver={(e) => {
+                    if (e.dataTransfer.types.includes('application/x-section-type')) {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'copy'
+                      setPaletteOver(true)
+                    }
+                  }}
+                  onDragLeave={() => setPaletteOver(false)}
+                  onDrop={onPaletteDrop}
+                >
+                  {sections.length === 0 ? (
+                    <div className="px-8 py-20 text-center">
+                      <div className="h-12 w-12 rounded-xl bg-[#f1f1f1] flex items-center justify-center mx-auto mb-3">
+                        <Layers className="h-6 w-6 text-[#8a8a8a]" />
+                      </div>
+                      <h3 className="text-[15px] font-semibold text-[#1a1a1a]">Start building your page</h3>
+                      <p className="text-[12px] text-[#8a8a8a] mt-1 max-w-sm mx-auto">
+                        Drag a block in from the Add panel, or begin with a template.
+                      </p>
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <button onClick={() => setLeftTab('add')} className="sf-btn sf-btn-primary"><Plus className="h-3.5 w-3.5" /> Add section</button>
+                        <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary"><Sparkles className="h-3.5 w-3.5" /> Use a template</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragStart={({ active }) => { setActiveDragId(active.id as string); setSelectedId(active.id as string) }}
+                      onDragEnd={onDragEnd}
+                      onDragCancel={() => setActiveDragId(null)}
+                    >
+                      <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                        {sections.map((section, idx) => (
+                          <SortableBlock
+                            key={section.id}
+                            id={section.id}
+                            index={idx}
+                            total={sections.length}
+                            selected={selectedId === section.id}
+                            hidden={!section.isVisible}
+                            type={section.sectionType}
+                            meta={metaFor(section.sectionType)}
+                            onSelect={() => { setSelectedId(section.id); setRightTab('content') }}
+                            onMove={moveSection}
+                            onDuplicate={duplicateSection}
+                            onToggleVisible={toggleVisible}
+                            onRemove={removeSection}
+                            dragging={activeDragId === section.id}
+                          >
+                            <SectionPreview section={section} categories={categories} mobile={device === 'mobile'} />
+                          </SortableBlock>
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                  )}
+
+                  {sections.length > 0 && (
+                    <div
+                      className={cn(
+                        'm-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 py-4 transition-colors',
+                        paletteOver ? 'border-[#005bd3] bg-[#f0f6ff] text-[#005bd3]' : 'border-[#e3e3e3] text-[#8a8a8a]'
+                      )}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span className="text-[12px] font-medium">
+                        {paletteOver ? 'Drop to add the block' : 'Drag a block here to add it'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-[#8a8a8a] text-center mt-3">
+              {mode === 'preview'
+                ? pageType === 'home'
+                  ? 'Previewing the real storefront with your draft changes · only admins can see this'
+                  : 'Previewing the published page · publish your edits to see them here'
+                : 'Drag sections to reorder · click to edit · ⌘Z undo · changes autosave as drafts'}
+            </p>
+          </div>
+        </main>
+
+        {/* ===== Inspector ===== */}
+        <aside className="w-full lg:w-[340px] shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-[#e3e3e3] flex flex-col lg:min-h-0">
+          {selected ? (
+            <>
+              <div className="px-4 py-3 border-b border-[#e3e3e3] flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-wider text-[#8a8a8a]">Section</p>
+                  <h2 className="text-[14px] font-semibold text-[#1a1a1a] truncate">
+                    {metaFor(selected.sectionType)?.label || selected.sectionType}
+                  </h2>
+                </div>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <IconBtn title="Move up" disabled={sections.findIndex(s => s.id === selected.id) === 0} onClick={() => moveSection(selected.id, -1)}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
+                  <IconBtn title="Move down" disabled={sections.findIndex(s => s.id === selected.id) === sections.length - 1} onClick={() => moveSection(selected.id, 1)}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
+                  <IconBtn title="Duplicate" onClick={() => duplicateSection(selected.id)}><Copy className="h-3.5 w-3.5" /></IconBtn>
+                  <IconBtn title={selected.isVisible ? 'Hide' : 'Show'} onClick={() => toggleVisible(selected.id)}>{selected.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</IconBtn>
+                  <IconBtn title="Remove" danger onClick={() => removeSection(selected.id)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
+                  <IconBtn title="Close" onClick={() => setSelectedId(null)}><X className="h-4 w-4" /></IconBtn>
+                </div>
+              </div>
+
+              <div className="flex border-b border-[#e3e3e3]">
+                {['content', 'design'].map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setRightTab(tab)}
+                    className={cn(
+                      'flex-1 h-9 text-[12px] font-medium capitalize border-b-2 -mb-px transition-colors',
+                      rightTab === tab ? 'border-[#1a1a1a] text-[#1a1a1a]' : 'border-transparent text-[#616161] hover:text-[#1a1a1a]'
+                    )}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex-1 lg:overflow-y-auto p-4">
                 {rightTab === 'content' ? (
                   <SectionConfigEditor
-                    section={selectedSectionData}
+                    section={selected}
                     categories={categories}
-                    device={editorDevice}
-                    setDevice={setEditorDevice}
-                    onUpdate={(config) => updateSectionConfig(selectedSectionData.id, config)}
+                    device={device === 'mobile' ? 'mobile' : 'desktop'}
+                    setDevice={(d) => setDevice(d)}
+                    onUpdate={(config) => updateConfig(selected.id, config)}
                   />
                 ) : (
                   <DesignEditor
-                    config={selectedSectionData.config}
-                    sectionType={selectedSectionData.sectionType}
-                    onUpdate={(design) => updateSectionConfig(selectedSectionData.id, { ...selectedSectionData.config, design })}
+                    config={configOf(selected)}
+                    sectionType={selected.sectionType}
+                    onUpdate={(design) => updateConfig(selected.id, { ...configOf(selected), design })}
                   />
                 )}
               </div>
-              <div className="px-4 py-3 border-t border-border space-y-2">
-                <p className="text-xs text-muted-foreground">Changes auto-save. Click <strong>Publish</strong> at the top to make them live.</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-destructive border-destructive/30 hover:bg-destructive hover:text-white hover:border-destructive"
-                  onClick={() => { const id = selectedSectionData.id; setSelectedSection(null); delSection(id) }}
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Remove section
-                </Button>
+
+              <div className="px-4 py-2.5 border-t border-[#e3e3e3]">
+                <p className="text-[11px] text-[#8a8a8a]">{saving > 0 ? 'Saving draft…' : 'Draft saved automatically'}{dirty ? ' · not published' : ''}</p>
               </div>
-            </Card>
+            </>
+          ) : (
+            <div className="flex-1 lg:overflow-y-auto">
+              <div className="px-4 py-3 border-b border-[#e3e3e3]">
+                <h2 className="text-[14px] font-semibold text-[#1a1a1a]">Page settings</h2>
+                <p className="text-[11px] text-[#8a8a8a] mt-0.5">{pageLabel}</p>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="rounded-lg border border-[#e3e3e3] p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[12px] font-medium text-[#1a1a1a]">{themeName}</p>
+                      <p className="text-[11px] text-[#8a8a8a]">Active theme</p>
+                    </div>
+                    <Link href="/admin/themes" className="sf-btn sf-btn-secondary !h-7 !text-[11px]">Change</Link>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-[#e3e3e3] p-3 space-y-2">
+                  <p className="text-[12px] font-medium text-[#1a1a1a]">{sections.length} sections</p>
+                  {sections.map((s, i) => (
+                    <button
+                      key={s.id}
+                      onClick={() => setSelectedId(s.id)}
+                      className="w-full flex items-center justify-between gap-2 text-left text-[11px] text-[#616161] hover:text-[#1a1a1a]"
+                    >
+                      <span className="truncate">{i + 1}. {metaFor(s.sectionType)?.label || s.sectionType}</span>
+                      <ChevronDown className="h-3 w-3 -rotate-90 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+                <div className="rounded-lg bg-[#f7f7f7] p-3">
+                  <p className="text-[11px] font-medium text-[#303030] flex items-center gap-1.5"><MousePointerClick className="h-3.5 w-3.5" /> Editing tips</p>
+                  <ul className="text-[11px] text-[#616161] mt-1.5 space-y-1 list-disc pl-4">
+                    <li>Click any section on the canvas to edit it.</li>
+                    <li>Drag the grip handle to reorder sections.</li>
+                    <li>Drag blocks from Add onto the page.</li>
+                    <li>Publish when you are ready to go live.</li>
+                  </ul>
+                </div>
+                <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary w-full">
+                  <Sparkles className="h-3.5 w-3.5" /> Browse templates
+                </button>
+                <Link href="/admin/appearance" className="sf-btn sf-btn-secondary w-full">
+                  <Settings2 className="h-3.5 w-3.5" /> Colors & typography
+                </Link>
+              </div>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      {/* Templates dialog */}
+      {showTemplates && (
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4" onClick={() => setShowTemplates(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#e3e3e3]">
+              <div>
+                <h2 className="text-[15px] font-semibold text-[#1a1a1a]">Starter templates</h2>
+                <p className="text-[11px] text-[#8a8a8a]">Sections are added below your current content.</p>
+              </div>
+              <button onClick={() => setShowTemplates(false)} className="p-1.5 rounded-md hover:bg-[#f1f1f1]" aria-label="Close templates">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-3 space-y-2">
+              {TEMPLATES.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => applyTemplate(t)}
+                  className="w-full text-left p-3.5 rounded-lg border border-[#e3e3e3] hover:border-[#8a8a8a] hover:bg-[#fafafa] transition-colors"
+                >
+                  <p className="text-[13px] font-semibold text-[#1a1a1a]">{t.name}</p>
+                  <p className="text-[11px] text-[#616161] mt-0.5">{t.desc}</p>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {t.sections.map((type, i) => (
+                      <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-[#f1f1f1] text-[#616161]">
+                        {metaFor(type)?.label || type}
+                      </span>
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
-
-      {/* ===== Themes dialog ===== */}
-      <Dialog open={showThemes} onOpenChange={setShowThemes}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Palette className="h-5 w-5" /> Theme presets</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground -mt-1">
-            A theme sets colors, fonts, button shapes and corner radius across the whole storefront.
-          </p>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {THEME_PRESETS.map(p => (
-              <button
-                key={p.id}
-                onClick={() => applyTheme(p)}
-                disabled={applyingTheme === p.id}
-                className="text-left rounded-xl border border-border overflow-hidden hover:border-foreground/40 hover:shadow-sm transition-all group"
-              >
-                <div className="h-20 flex" style={{ backgroundColor: p.settings.background_color }}>
-                  <div className="flex-1 flex flex-col items-center justify-center gap-1.5 p-3">
-                    <span className="text-sm font-bold" style={{ fontFamily: p.settings.heading_font === 'Display' ? 'inherit' : `'${p.settings.heading_font}', sans-serif`, color: p.settings.text_color }}>Aa</span>
-                    <div className="flex gap-1.5">
-                      <span className="h-4 w-8 rounded" style={{ backgroundColor: p.settings.primary_color, borderRadius: p.settings.button_style === 'pill' ? '999px' : p.settings.button_style === 'square' ? '0' : '4px' }} />
-                      <span className="h-4 w-4 rounded-full" style={{ backgroundColor: p.settings.accent_color }} />
-                    </div>
-                  </div>
-                  <div className="w-8" style={{ backgroundColor: p.settings.primary_color }} />
-                </div>
-                <div className="p-3 border-t border-border">
-                  <p className="text-sm font-medium flex items-center gap-1">{p.name} {applyingTheme === p.id && <span className="animate-pulse">·</span>}</p>
-                  <p className="text-xs text-muted-foreground">{p.desc}</p>
-                  <div className="flex gap-1 mt-2">
-                    {p.swatch.map((c, i) => <span key={i} className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: c }} />)}
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">Fine-tune everything in Admin → Appearance afterwards.</p>
-        </DialogContent>
-      </Dialog>
-
-      {/* ===== Templates dialog ===== */}
-      <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Layers className="h-5 w-5" /> Starter templates</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            {TEMPLATES.map(t => (
-              <button key={t.id} onClick={() => applyTemplate(t)} className="w-full text-left p-4 rounded-xl border border-border hover:border-foreground/40 hover:bg-muted/30 transition-colors">
-                <p className="text-sm font-semibold">{t.name}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{t.desc}</p>
-                <div className="flex gap-1 mt-2 flex-wrap">
-                  {t.sections.map((s, i) => (
-                    <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{SECTION_CATALOG.find(x => x.type === s)?.label || s}</span>
-                  ))}
-                </div>
-              </button>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ===== Real storefront preview ===== */}
-      <Dialog open={showLivePreview} onOpenChange={setShowLivePreview}>
-        <DialogContent className="max-w-[95vw] w-fit h-[90vh]">
-          <DialogHeader className="sr-only"><DialogTitle>Live storefront preview</DialogTitle></DialogHeader>
-          <div className="flex items-center justify-between gap-3 -mt-2">
-            <Badge variant="outline">Live storefront — published changes only</Badge>
-            <div className="inline-flex rounded-md border border-border overflow-hidden">
-              <button onClick={() => setLiveDevice('desktop')} className={`px-3 py-1.5 text-xs ${liveDevice === 'desktop' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}><Monitor className="h-3.5 w-3.5" /></button>
-              <button onClick={() => setLiveDevice('tablet')} className={`px-3 py-1.5 text-xs ${liveDevice === 'tablet' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}><Tablet className="h-3.5 w-3.5" /></button>
-              <button onClick={() => setLiveDevice('mobile')} className={`px-3 py-1.5 text-xs ${liveDevice === 'mobile' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}><Smartphone className="h-3.5 w-3.5" /></button>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setShowLivePreview(false)}><X className="h-4 w-4" /></Button>
-          </div>
-          <iframe
-            key={liveDevice + String(hasDraftChanges)}
-            src={`/?preview=1&t=${Date.now()}`}
-            title="Storefront preview"
-            className="rounded-lg border border-border bg-white mx-auto"
-            style={{ width: livePreviewWidth, maxWidth: '85vw', height: 'calc(90vh - 70px)' }}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
 
-function DropZone({ onDrop, onDragOver }) {
+function LayoutIcon() {
+  return <Layers className="h-5 w-5 text-[#b5b5b5] mx-auto" />
+}
+
+function GlobalRow({ label, hint }: { label: string; hint: string }) {
   return (
-    <div
-      className="h-1 transition-all hover:h-9 hover:bg-blue-50 flex items-center justify-center cursor-pointer"
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-    >
-      <span className="text-[10px] text-blue-400 opacity-0 hover:opacity-100">Drop here</span>
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-md text-[#8a8a8a]" title={`${label} is global — edit it in ${hint}`}>
+      <Lock className="h-3 w-3 shrink-0" />
+      <span className="text-[12px] flex-1">{label}</span>
+      <span className="text-[9px] uppercase tracking-wide">Global</span>
     </div>
   )
 }
 
-// Floating toolbar button (Shopify-style dark pill)
-function TbBtn({ onClick, disabled, title, danger, children }) {
+function IconBtn({ title, onClick, disabled, danger, children }: any) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title}
       aria-label={title}
-      className={`p-1.5 rounded-md transition-colors disabled:opacity-30 ${danger ? 'hover:bg-red-500/80' : 'hover:bg-white/15'}`}
+      className={cn(
+        'p-1.5 rounded-md text-[#616161] hover:bg-[#f1f1f1] hover:text-[#1a1a1a] disabled:opacity-30',
+        danger && 'hover:bg-rose-50 hover:text-rose-600'
+      )}
     >
       {children}
     </button>
   )
 }
 
-// ============================================================
-// Preview components — mirror the real storefront (section-renderer.tsx)
-// ============================================================
-function secWrapStyle(config, type) {
-  const design = config.design || {}
-  const paddingY = design.paddingY || PADDING_DEFAULTS[type] || 'md'
-  return {
-    backgroundColor: design.bg || undefined,
-    color: design.textColor || undefined,
-    paddingTop: PADDING_Y[paddingY] ?? 56,
-    paddingBottom: PADDING_Y[paddingY] ?? 56
-  }
-}
-
-function SectionPreview({ section, categories, mobile }) {
-  const config = typeof section.config === 'string' ? (() => { try { return JSON.parse(section.config) } catch { return {} } })() : section.config
-
-  const preview = (() => {
-    switch (section.sectionType) {
-      case 'hero': {
-        const h = mobile ? (config.heightMobile || '48vh') : (config.height || '60vh')
-        const titleSize = { small: 28, medium: 36, large: 46, xlarge: 56 }[config.titleSize] || 46
-        const size = mobile ? Math.round(titleSize * 0.72) : titleSize
-        const posCls = contentPositionClasses(config.contentPosition).className
-        const overlay = overlayStyleFor(config)
-        const dark = config.overlay !== 'light'
-        return (
-          <div className="relative w-full overflow-hidden" style={{ height: h, minHeight: 220 }}>
-            {config.image
-              ? <img src={config.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
-              : <div className="absolute inset-0 bg-gradient-to-br from-zinc-300 to-zinc-400" />}
-            <div
-              className={`absolute inset-0 ${overlay ? '' : dark ? 'bg-gradient-to-b from-black/30 via-black/40 to-black/60' : 'bg-white/30'}`}
-              style={overlay || undefined}
-            />
-            <div className={`absolute inset-0 flex ${posCls}`}>
-              <div className="px-8 max-w-[85%]">
-                <p className={`font-bold leading-[1.05] tracking-tight ${dark ? 'text-white' : 'text-zinc-900'}`} style={{ fontSize: size, fontFamily: 'var(--font-display), Inter, sans-serif' }}>
-                  {config.title || 'Hero Banner'}
-                </p>
-                {config.subtitle && <p className={`mt-3 text-sm md:text-base opacity-85 ${dark ? 'text-white/85' : 'text-zinc-700'}`}>{config.subtitle}</p>}
-                {config.buttonText && <span className={`inline-block mt-4 text-xs px-4 py-2 rounded-md font-medium ${dark ? 'bg-white text-black' : 'bg-zinc-900 text-white'}`}>{config.buttonText}</span>}
-              </div>
-            </div>
-          </div>
-        )
-      }
-      case 'slideshow': {
-        const slide = (config.slides || [])[0] || {}
-        const h = mobile ? (config.heightMobile || '50vh') : (config.height || '70vh')
-        const overlay = overlayStyleFor(config)
-        const dark = config.overlay !== 'light'
-        const posCls = contentPositionClasses(config.contentPosition).className
-        return (
-          <div className="relative w-full overflow-hidden" style={{ height: h, minHeight: 200 }}>
-            {slide.image
-              ? <img src={slide.image} alt="" className="absolute inset-0 h-full w-full object-cover" />
-              : <div className="absolute inset-0 bg-gradient-to-br from-zinc-700 to-zinc-900" />}
-            <div
-              className={`absolute inset-0 ${overlay ? '' : 'bg-black/40'}`}
-              style={overlay || undefined}
-            />
-            <div className={`absolute inset-0 flex ${posCls}`}>
-              <div className={`px-8 max-w-[85%] ${dark ? 'text-white' : 'text-zinc-900'}`}>
-                {slide.eyebrow && <p className="text-[10px] uppercase tracking-[0.2em] opacity-80 mb-1.5">{slide.eyebrow}</p>}
-                <p className="text-2xl md:text-3xl font-bold">{slide.title || 'Slideshow'}</p>
-                {slide.subtitle && <p className="text-xs opacity-80 mt-1">{slide.subtitle}</p>}
-                {slide.buttonText && <span className={`inline-block mt-3 text-xs px-4 py-2 rounded-md font-medium ${dark ? 'bg-white text-black' : 'bg-zinc-900 text-white'}`}>{slide.buttonText}</span>}
-              </div>
-            </div>
-            {(config.slides || []).length > 1 && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                {(config.slides || []).map((_, i) => <span key={i} className={`h-1.5 rounded-full ${i === 0 ? 'w-5 bg-white' : 'w-1.5 bg-white/50'}`} />)}
-              </div>
-            )}
-          </div>
-        )
-      }
-      case 'announcement-bar':
-        return <div className="py-2 px-4 text-center" style={{ backgroundColor: config.bg || '#1a1a1a' }}><p className="text-xs font-medium" style={{ color: config.color || '#fff' }}>{config.text || 'Announcement text...'}</p></div>
-      case 'product-grid': {
-        const cols = mobile ? (parseInt(config.columnsMobile) || 2) : (parseInt(config.columnsDesktop) || 4)
-        const count = Math.min(parseInt(config.limit) || 8, cols * 2)
-        return (
-          <div>
-            {config.title && <p className="text-base font-bold mb-3" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{config.title}</p>}
-            <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))` }}>
-              {Array.from({ length: Math.max(count, cols) }).map((_, i) => (
-                <div key={i}>
-                  <div className="aspect-square rounded-lg bg-muted/60 flex items-center justify-center"><Grid3x3 className="h-5 w-5 text-muted-foreground/40" /></div>
-                  <div className="h-2 w-3/4 bg-muted rounded mt-2" />
-                  <div className="h-2 w-1/3 bg-muted rounded mt-1" />
-                </div>
-              ))}
-            </div>
-            {config.buttonText && <div className="mt-4"><span className="text-xs px-4 py-2 rounded-md border border-border font-medium">{config.buttonText}</span></div>}
-          </div>
-        )
-      }
-      case 'image-text': {
-        const reversed = config.layout === 'image-right'
-        return (
-          <div className={`flex flex-col ${mobile ? '' : 'md:flex-row'} gap-5 items-center ${reversed ? (mobile ? '' : 'md:flex-row-reverse') : ''}`}>
-            <div className={`w-full ${mobile ? '' : 'md:w-1/2'}`}>
-              {config.image
-                ? <img src={config.image} alt="" className="w-full aspect-[4/3] object-cover rounded-lg" />
-                : <div className="w-full aspect-[4/3] rounded-lg bg-muted/60 flex items-center justify-center"><ImageIcon className="h-7 w-7 text-muted-foreground/40" /></div>}
-            </div>
-            <div className={`w-full ${mobile ? '' : 'md:w-1/2'}`}>
-              <p className="text-base font-bold">{config.title || 'Image + Text'}</p>
-              <p className="text-xs text-muted-foreground mt-1.5 line-clamp-4">{stripTags(config.body)}</p>
-              {config.buttonText && <span className="inline-block mt-3 text-xs px-3.5 py-1.5 rounded-md bg-foreground text-background font-medium">{config.buttonText}</span>}
-            </div>
-          </div>
-        )
-      }
-      case 'marquee':
-        return <div className="py-2.5 overflow-hidden" style={{ backgroundColor: config.bg || '#1a1a1a' }}><p className="text-xs font-medium text-center" style={{ color: config.color || '#fff' }}>{config.text}</p></div>
-      case 'text':
-        return (
-          <div className={`text-${config.align || 'center'}`}>
-            {config.title && <p className="text-lg font-bold mb-1.5" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{config.title}</p>}
-            <p className="text-sm text-muted-foreground line-clamp-3">{stripTags(config.body)}</p>
-          </div>
-        )
-      case 'image':
-        return config.url
-          ? <img src={config.url} alt={config.alt || ''} className="w-full max-h-64 object-cover rounded-lg" />
-          : <div className="w-full h-40 rounded-lg bg-muted/60 flex items-center justify-center"><ImageIcon className="h-7 w-7 text-muted-foreground/40" /></div>
-      case 'rich-text':
-        return (
-          <div>
-            {config.title && <p className="text-lg font-bold mb-1.5">{config.title}</p>}
-            <p className="text-sm text-muted-foreground line-clamp-4">{stripTags(config.content)}</p>
-          </div>
-        )
-      case 'testimonials': {
-        const items = (config.items || []).slice(0, mobile ? 1 : 3)
-        return (
-          <div>
-            {config.title && <p className="text-base font-bold mb-3 text-center">{config.title}</p>}
-            <div className={`grid gap-3 ${mobile ? 'grid-cols-1' : 'grid-cols-3'}`}>
-              {items.map((t, i) => (
-                <div key={i} className="p-3 rounded-lg border border-border bg-card">
-                  <div className="flex gap-0.5">{Array.from({ length: 5 }).map((_, j) => <Star key={j} className={`h-2.5 w-2.5 ${j < (t.rating || 5) ? 'fill-amber-500 text-amber-500' : 'text-muted'}`} />)}</div>
-                  <p className="text-[11px] text-muted-foreground mt-1.5 line-clamp-3">{t.text}</p>
-                  <p className="text-[11px] font-medium mt-1.5">{t.author}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      }
-      case 'faq': {
-        const items = (config.items || []).slice(0, 3)
-        return (
-          <div>
-            {config.title && <p className="text-base font-bold mb-3 text-center">{config.title}</p>}
-            <div className="space-y-1.5">
-              {items.map((f, i) => (
-                <div key={i} className="px-3 py-2.5 border border-border rounded-lg flex items-center justify-between">
-                  <span className="text-xs font-medium truncate">{f.question}</span>
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      }
-      case 'newsletter':
-        return (
-          <div className="bg-foreground text-background text-center">
-            <p className="text-[10px] uppercase tracking-[0.2em] opacity-70 mb-1.5">Newsletter</p>
-            <p className="text-lg font-bold">{config.title || 'Newsletter'}</p>
-            <p className="text-xs opacity-80 mt-1">{config.subtitle}</p>
-            <div className="mt-3 inline-flex gap-1.5"><div className="h-8 w-40 rounded-md bg-background/20" /><div className="h-8 w-16 rounded-md bg-background flex items-center justify-center"><span className="text-[10px] text-foreground font-medium">Subscribe</span></div></div>
-          </div>
-        )
-      case 'discounts':
-        return (
-          <div>
-            {config.title && <p className="text-base font-bold mb-3 text-center">{config.title}</p>}
-            <div className={`grid gap-2 ${mobile ? 'grid-cols-1' : 'grid-cols-2'}`}>
-              {[1, 2].map(i => (
-                <div key={i} className="p-2.5 rounded-lg border-2 border-dashed border-border flex items-center justify-between">
-                  <div><div className="h-2.5 w-14 bg-muted rounded mb-1" /><div className="h-2 w-20 bg-muted rounded" /></div>
-                  <span className="text-[10px] px-2 py-1 rounded bg-foreground text-background">Copy</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      case 'video':
-        return (
-          <div>
-            {config.title && <p className="text-base font-bold mb-3 text-center">{config.title}</p>}
-            <div className="aspect-video rounded-lg bg-zinc-900 flex items-center justify-center"><Play className="h-9 w-9 text-white/50" /></div>
-          </div>
-        )
-      case 'custom-html':
-        return <div className="font-mono text-[11px] text-muted-foreground bg-muted/40 p-3 rounded-lg line-clamp-4 whitespace-pre-wrap">{config.html || '<!-- Custom HTML -->'}</div>
-      case 'countdown': {
-        const boxes = [['12', 'Days'], ['08', 'Hours'], ['45', 'Min'], ['30', 'Sec']]
-        return (
-          <div className="text-center" style={{ backgroundColor: config.bg || '#1a1a1a', color: config.color || '#fff' }}>
-            {config.eyebrow && <p className="text-[10px] uppercase tracking-[0.25em] opacity-70">{config.eyebrow}</p>}
-            <p className="text-lg font-bold mt-1" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{config.title || 'Sale ends soon'}</p>
-            <div className="mt-3 flex justify-center gap-2.5">
-              {boxes.map((b, i) => (
-                <div key={i} className="min-w-[52px] rounded-lg border px-2.5 py-2" style={{ borderColor: 'rgba(255,255,255,0.2)', backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                  <p className="text-xl font-bold tabular-nums">{b[0]}</p>
-                  <p className="text-[9px] uppercase tracking-wider opacity-70 mt-0.5">{b[1]}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      }
-      case 'cta':
-        return (
-          <div className="rounded-2xl px-6 py-10 text-center" style={{ backgroundColor: config.bg || '#1a1a1a', color: config.color || '#fff' }}>
-            {config.eyebrow && <p className="text-[10px] uppercase tracking-[0.2em] opacity-70 mb-1.5">{config.eyebrow}</p>}
-            <p className="text-xl font-bold" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{config.title || 'CTA Banner'}</p>
-            {config.subtitle && <p className="text-xs opacity-80 mt-1.5 max-w-md mx-auto">{config.subtitle}</p>}
-            {config.buttonText && <span className="inline-block mt-4 text-xs px-5 py-2.5 rounded-md font-medium" style={{ backgroundColor: config.color || '#fff', color: config.bg || '#1a1a1a' }}>{config.buttonText}</span>}
-          </div>
-        )
-      case 'stats': {
-        const items = (config.items || []).slice(0, mobile ? 2 : 4)
-        return (
-          <div className={`grid gap-6 text-center ${mobile ? 'grid-cols-2' : 'grid-cols-4'}`}>
-            {items.map((s, i) => (
-              <div key={i}>
-                <p className="text-2xl md:text-3xl font-bold" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{s.value}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        )
-      }
-      case 'logo-cloud': {
-        const items = (config.items || []).slice(0, 4)
-        return (
-          <div>
-            {config.title && <p className="text-center text-[10px] uppercase tracking-[0.2em] text-muted-foreground mb-4">{config.title}</p>}
-            <div className={`flex items-center justify-center gap-6 ${mobile ? 'flex-wrap' : ''}`}>
-              {items.map((l, i) => (
-                <span key={i} className="text-sm font-semibold text-muted-foreground/70" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>
-                  {l.image ? <img src={l.image} alt="" className="h-7 w-auto object-contain grayscale" /> : l.name}
-                </span>
-              ))}
-            </div>
-          </div>
-        )
-      }
-      case 'contact':
-        return (
-          <div className={`grid gap-5 ${mobile ? '' : 'grid-cols-[1fr_auto]'}`}>
-            <div className="space-y-2">
-              <div className="h-9 rounded-md border border-input bg-muted/30" />
-              <div className="h-9 rounded-md border border-input bg-muted/30" />
-              <div className="h-16 rounded-md border border-input bg-muted/30" />
-              <div className="h-9 w-28 rounded-md bg-foreground" />
-            </div>
-            {!mobile && (
-              <div className="space-y-2.5 w-44">
-                {[1, 2, 3].map(i => <div key={i} className="flex gap-2 items-center"><div className="h-7 w-7 rounded-full bg-muted" /><div className="flex-1"><div className="h-2 w-20 bg-muted rounded" /><div className="h-2 w-14 bg-muted rounded mt-1" /></div></div>)}
-              </div>
-            )}
-          </div>
-        )
-      default:
-        return <div className="p-4 text-xs text-muted-foreground">Unknown section type</div>
-    }
-  })()
-
-  return (
-    <div style={secWrapStyle(config, section.sectionType)} data-sec-preview="">
-      {(config.design?.customCss || config.customCss) && (
-        <style dangerouslySetInnerHTML={{ __html: scopeSectionCss(config.design?.customCss || config.customCss, '[data-sec-preview]') }} />
-      )}
-      <div className="px-4 md:px-8 max-w-5xl mx-auto w-full">
-        {preview}
-      </div>
-    </div>
-  )
-}
-
-function stripTags(html) {
-  return String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-}
-
-// ============================================================
-// Section config editor (right panel — Content tab)
-// ============================================================
-function SectionConfigEditor({ section, categories, device, setDevice, onUpdate }) {
-  const config = section.config
-  const set = (k, v) => onUpdate({ ...config, [k]: v })
-  const needsDevice = ['hero', 'product-grid', 'slideshow'].includes(section.sectionType)
-
-  const updateListItem = (key, index, field, value) => {
-    const items = [...(config[key] || [])]
-    items[index] = { ...items[index], [field]: value }
-    set(key, items)
-  }
-  const addListItem = (key, template) => set(key, [...(config[key] || []), template])
-  const removeListItem = (key, index) => set(key, (config[key] || []).filter((_, i) => i !== index))
-  const moveListItem = (key, index, dir) => {
-    const items = [...(config[key] || [])]
-    const to = index + dir
-    if (to < 0 || to >= items.length) return
-    const [m] = items.splice(index, 1)
-    items.splice(to, 0, m)
-    set(key, items)
+function SortableBlock({ id, index, total, selected, hidden, type, meta, onSelect, onMove, onDuplicate, onToggleVisible, onRemove, dragging, children }: any) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const Icon = meta?.icon || Layers
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: dragging || isDragging ? 0.45 : 1,
+    zIndex: isDragging ? 30 : undefined,
+    position: 'relative' as const
   }
 
   return (
-    <div className="space-y-3.5">
-      {needsDevice && (
-        <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground">Editing values for</Label>
-          <div className="inline-flex rounded-md border border-border overflow-hidden">
-            <button onClick={() => setDevice('desktop')} className={`px-2 py-1 text-[10px] font-medium flex items-center gap-1 ${device === 'desktop' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}><Monitor className="h-3 w-3" /> Desktop</button>
-            <button onClick={() => setDevice('mobile')} className={`px-2 py-1 text-[10px] font-medium flex items-center gap-1 ${device === 'mobile' ? 'bg-foreground text-background' : 'hover:bg-muted'}`}><Smartphone className="h-3 w-3" /> Mobile</button>
-          </div>
-        </div>
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={onSelect}
+      className={cn(
+        'group/sec relative transition-shadow',
+        selected ? 'ring-2 ring-inset ring-[#005bd3] z-[1]' : 'hover:ring-1 hover:ring-inset hover:ring-[#005bd3]/40',
+        hidden && 'opacity-55'
       )}
-
-      {section.sectionType === 'hero' && (
-        <>
-          <div><Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field></div>
-          <div><Field label="Subtitle"><Input value={config.subtitle || ''} onChange={(e) => set('subtitle', e.target.value)} /></Field></div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Button text"><Input value={config.buttonText || ''} onChange={(e) => set('buttonText', e.target.value)} /></Field>
-            <Field label="Button URL"><Input value={config.buttonUrl || ''} onChange={(e) => set('buttonUrl', e.target.value)} /></Field>
-          </div>
-          <Field label="Background image"><FileUpload type="image" value={config.image || ''} onChange={(url) => set('image', url)} /></Field>
-          <div>
-            <div className="flex items-center justify-between">
-              <Label className="text-xs">Overlay opacity</Label>
-              <span className="text-xs text-muted-foreground tabular-nums">{config.overlayOpacity ?? 40}%</span>
-            </div>
-            <input type="range" min={0} max={90} step={5} value={config.overlayOpacity ?? 40} onChange={(e) => set('overlayOpacity', parseInt(e.target.value))} className="w-full mt-1 accent-blue-600" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Text color">
-              <Select value={config.overlay || 'dark'} onChange={(v) => set('overlay', v)} options={[['dark', 'White text'], ['light', 'Dark text']]} />
-            </Field>
-            <Field label="Title size">
-              <Select value={config.titleSize || 'large'} onChange={(v) => set('titleSize', v)} options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['xlarge', 'Huge']]} />
-            </Field>
-          </div>
-          <Field label="Content position">
-            <Select value={config.contentPosition || 'middle-left'} onChange={(v) => set('contentPosition', v)} options={POSITION_OPTIONS} />
-          </Field>
-          {device === 'desktop' ? (
-            <Field label="Height (desktop)">
-              <Select value={config.height || '60vh'} onChange={(v) => set('height', v)} options={[['45vh', 'Small'], ['60vh', 'Medium'], ['78vh', 'Large'], ['100vh', 'Full screen']]} />
-            </Field>
-          ) : (
-            <Field label="Height (mobile)">
-              <Select value={config.heightMobile || '48vh'} onChange={(v) => set('heightMobile', v)} options={[['40vh', 'Small'], ['48vh', 'Medium'], ['60vh', 'Large'], ['80vh', 'Full screen']]} />
-            </Field>
-          )}
-        </>
-      )}
-
-      {section.sectionType === 'slideshow' && (
-        <>
-          {(config.slides || []).map((s, i) => (
-            <div key={i} className="p-3 border border-border rounded-lg space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">Slide #{i + 1}</span>
-                <div className="flex items-center gap-0.5">
-                  <button onClick={() => moveListItem('slides', i, -1)} disabled={i === 0} className="p-1 rounded hover:bg-muted disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
-                  <button onClick={() => moveListItem('slides', i, 1)} disabled={i === (config.slides || []).length - 1} className="p-1 rounded hover:bg-muted disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
-                  <button onClick={() => removeListItem('slides', i)} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
-                </div>
-              </div>
-              <FileUpload type="image" value={s.image || ''} onChange={(url) => updateListItem('slides', i, 'image', url)} />
-              <Input value={s.eyebrow || ''} onChange={(e) => updateListItem('slides', i, 'eyebrow', e.target.value)} placeholder="Eyebrow (optional)" className="h-8 text-xs" />
-              <Input value={s.title || ''} onChange={(e) => updateListItem('slides', i, 'title', e.target.value)} placeholder="Headline" className="h-8 text-xs" />
-              <Input value={s.subtitle || ''} onChange={(e) => updateListItem('slides', i, 'subtitle', e.target.value)} placeholder="Subtitle" className="h-8 text-xs" />
-              <div className="grid grid-cols-2 gap-2">
-                <Input value={s.buttonText || ''} onChange={(e) => updateListItem('slides', i, 'buttonText', e.target.value)} placeholder="Button text" className="h-8 text-xs" />
-                <Input value={s.buttonUrl || ''} onChange={(e) => updateListItem('slides', i, 'buttonUrl', e.target.value)} placeholder="Button URL" className="h-8 text-xs" />
-              </div>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={() => addListItem('slides', { image: '', eyebrow: '', title: 'New slide', subtitle: '', buttonText: 'Shop now', buttonUrl: '/products' })}><Plus className="h-3.5 w-3.5 mr-1" /> Add slide</Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Autoplay">
-              <div className="flex items-center h-9"><Switch checked={config.autoplay !== false} onCheckedChange={(v) => set('autoplay', v)} /></div>
-            </Field>
-            <Field label="Show arrows">
-              <div className="flex items-center h-9"><Switch checked={config.arrows !== false} onCheckedChange={(v) => set('arrows', v)} /></div>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Overlay text">
-              <Select value={config.overlay || 'dark'} onChange={(v) => set('overlay', v)} options={[['dark', 'White text'], ['light', 'Dark text']]} />
-            </Field>
-            <Field label="Seconds per slide"><Input type="number" min={2} max={15} value={config.interval || 5} onChange={(e) => set('interval', parseInt(e.target.value) || 5)} /></Field>
-          </div>
-          <div>
-            <div className="flex items-center justify-between">
-              <Label className="text-xs">Overlay opacity</Label>
-              <span className="text-xs text-muted-foreground tabular-nums">{config.overlayOpacity ?? 40}%</span>
-            </div>
-            <input type="range" min={0} max={90} step={5} value={config.overlayOpacity ?? 40} onChange={(e) => set('overlayOpacity', parseInt(e.target.value))} className="w-full mt-1 accent-blue-600" />
-          </div>
-          <Field label="Content position">
-            <Select value={config.contentPosition || 'middle-left'} onChange={(v) => set('contentPosition', v)} options={POSITION_OPTIONS} />
-          </Field>
-          {device === 'desktop'
-            ? <Field label="Height (desktop)"><Select value={config.height || '70vh'} onChange={(v) => set('height', v)} options={[['45vh', 'Small'], ['60vh', 'Medium'], ['70vh', 'Large'], ['100vh', 'Full screen']]} /></Field>
-            : <Field label="Height (mobile)"><Select value={config.heightMobile || '50vh'} onChange={(v) => set('heightMobile', v)} options={[['40vh', 'Small'], ['50vh', 'Medium'], ['60vh', 'Large'], ['80vh', 'Full screen']]} /></Field>}
-        </>
-      )}
-
-      {section.sectionType === 'announcement-bar' && (
-        <>
-          <Field label="Text"><Input value={config.text || ''} onChange={(e) => set('text', e.target.value)} /></Field>
-          <div className="grid grid-cols-2 gap-2">
-            <ColorField label="Background" value={config.bg} defaultV="#1a1a1a" onChange={(v) => set('bg', v)} />
-            <ColorField label="Text color" value={config.color} defaultV="#ffffff" onChange={(v) => set('color', v)} />
-          </div>
-        </>
-      )}
-
-      {section.sectionType === 'product-grid' && (
-        <>
-          <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Source">
-              <Select value={config.source || 'featured'} onChange={(v) => set('source', v)} options={[['featured', 'Featured'], ['new', 'New Arrivals'], ['sale', 'On Sale'], ['all', 'All Products']]} />
-            </Field>
-            <Field label="Limit"><Input type="number" min={2} max={24} value={config.limit || 8} onChange={(e) => set('limit', parseInt(e.target.value) || 8)} /></Field>
-          </div>
-          {categories && categories.length > 0 && (
-            <Field label="Filter by category (optional)">
-              <Select value={config.categoryId || ''} onChange={(v) => set('categoryId', v)} options={[['', 'All categories'], ...categories.map(c => [c.id, c.name])]} />
-            </Field>
-          )}
-          {device === 'desktop'
-            ? <Field label="Columns (desktop)"><Select value={String(config.columnsDesktop || 4)} onChange={(v) => set('columnsDesktop', parseInt(v))} options={[['2', '2'], ['3', '3'], ['4', '4'], ['5', '5'], ['6', '6']]} /></Field>
-            : <Field label="Columns (mobile)"><Select value={String(config.columnsMobile || 2)} onChange={(v) => set('columnsMobile', parseInt(v))} options={[['1', '1'], ['2', '2'], ['3', '3']]} /></Field>}
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Button text (optional)"><Input value={config.buttonText || ''} onChange={(e) => set('buttonText', e.target.value)} placeholder="View all" /></Field>
-            <Field label="Button URL"><Input value={config.buttonUrl || ''} onChange={(e) => set('buttonUrl', e.target.value)} /></Field>
-          </div>
-        </>
-      )}
-
-      {section.sectionType === 'image-text' && (
-        <>
-          <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          <Field label="Body (HTML)"><Textarea rows={4} value={config.body || ''} onChange={(e) => set('body', e.target.value)} /></Field>
-          <Field label="Image"><FileUpload type="image" value={config.image || ''} onChange={(url) => set('image', url)} /></Field>
-          <Field label="Layout">
-            <Select value={config.layout || 'image-left'} onChange={(v) => set('layout', v)} options={[['image-left', 'Image left, text right'], ['image-right', 'Text left, image right']]} />
-          </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Button text"><Input value={config.buttonText || ''} onChange={(e) => set('buttonText', e.target.value)} /></Field>
-            <Field label="Button URL"><Input value={config.buttonUrl || ''} onChange={(e) => set('buttonUrl', e.target.value)} /></Field>
-          </div>
-        </>
-      )}
-
-      {section.sectionType === 'marquee' && (
-        <>
-          <Field label="Text"><Input value={config.text || ''} onChange={(e) => set('text', e.target.value)} /></Field>
-          <Field label="Speed"><Select value={config.speed || 'normal'} onChange={(v) => set('speed', v)} options={[['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']]} /></Field>
-          <div className="grid grid-cols-2 gap-2">
-            <ColorField label="Background" value={config.bg} defaultV="#1a1a1a" onChange={(v) => set('bg', v)} />
-            <ColorField label="Text color" value={config.color} defaultV="#ffffff" onChange={(v) => set('color', v)} />
-          </div>
-        </>
-      )}
-
-      {section.sectionType === 'text' && (
-        <>
-          <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          <Field label="Body (HTML)"><Textarea rows={4} value={config.body || ''} onChange={(e) => set('body', e.target.value)} /></Field>
-          <Field label="Alignment"><Select value={config.align || 'center'} onChange={(v) => set('align', v)} options={[['left', 'Left'], ['center', 'Center'], ['right', 'Right']]} /></Field>
-        </>
-      )}
-
-      {section.sectionType === 'image' && (
-        <>
-          <Field label="Image"><FileUpload type="image" value={config.url || ''} onChange={(url) => set('url', url)} /></Field>
-          <Field label="Alt text"><Input value={config.alt || ''} onChange={(e) => set('alt', e.target.value)} /></Field>
-          <Field label="Link (optional)"><Input value={config.link || ''} onChange={(e) => set('link', e.target.value)} placeholder="/products" /></Field>
-        </>
-      )}
-
-      {section.sectionType === 'rich-text' && (
-        <>
-          <Field label="Title (optional)"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          <Field label="Content (HTML)"><Textarea rows={8} value={config.content || ''} onChange={(e) => set('content', e.target.value)} className="font-mono text-xs" /></Field>
-        </>
-      )}
-
-      {section.sectionType === 'testimonials' && (
-        <>
-          <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          {(config.items || []).map((item, i) => (
-            <div key={i} className="p-3 border border-border rounded space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">#{i + 1}</span>
-                <div className="flex items-center gap-0.5">
-                  <button onClick={() => moveListItem('items', i, -1)} disabled={i === 0} className="p-1 rounded hover:bg-muted disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
-                  <button onClick={() => moveListItem('items', i, 1)} disabled={i === (config.items || []).length - 1} className="p-1 rounded hover:bg-muted disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
-                  <button onClick={() => removeListItem('items', i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Input value={item.author || ''} onChange={(e) => updateListItem('items', i, 'author', e.target.value)} placeholder="Author" className="h-8 text-xs" />
-                <Input value={item.role || ''} onChange={(e) => updateListItem('items', i, 'role', e.target.value)} placeholder="Role" className="h-8 text-xs" />
-              </div>
-              <Select value={String(item.rating || 5)} onChange={(v) => updateListItem('items', i, 'rating', parseInt(v))} options={[['5', '5 stars'], ['4', '4 stars'], ['3', '3 stars'], ['2', '2 stars'], ['1', '1 star']]} />
-              <Textarea rows={2} value={item.text || ''} onChange={(e) => updateListItem('items', i, 'text', e.target.value)} placeholder="Quote" className="text-xs" />
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={() => addListItem('items', { author: 'New Author', role: 'Verified Buyer', rating: 5, text: '' })}><Plus className="h-3.5 w-3.5 mr-1" /> Add testimonial</Button>
-        </>
-      )}
-
-      {section.sectionType === 'faq' && (
-        <>
-          <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          {(config.items || []).map((item, i) => (
-            <div key={i} className="p-3 border border-border rounded space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">#{i + 1}</span>
-                <div className="flex items-center gap-0.5">
-                  <button onClick={() => moveListItem('items', i, -1)} disabled={i === 0} className="p-1 rounded hover:bg-muted disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
-                  <button onClick={() => moveListItem('items', i, 1)} disabled={i === (config.items || []).length - 1} className="p-1 rounded hover:bg-muted disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
-                  <button onClick={() => removeListItem('items', i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                </div>
-              </div>
-              <Input value={item.question || ''} onChange={(e) => updateListItem('items', i, 'question', e.target.value)} placeholder="Question" className="h-8 text-xs" />
-              <Textarea rows={2} value={item.answer || ''} onChange={(e) => updateListItem('items', i, 'answer', e.target.value)} placeholder="Answer" className="text-xs" />
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={() => addListItem('items', { question: 'New question?', answer: 'Answer here.' })}><Plus className="h-3.5 w-3.5 mr-1" /> Add FAQ</Button>
-        </>
-      )}
-
-      {section.sectionType === 'newsletter' && (
-        <>
-          <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          <Field label="Subtitle"><Input value={config.subtitle || ''} onChange={(e) => set('subtitle', e.target.value)} /></Field>
-        </>
-      )}
-
-      {section.sectionType === 'discounts' && (
-        <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-      )}
-
-      {section.sectionType === 'video' && (
-        <>
-          <Field label="Title (optional)"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          <Field label="Video URL">
-            <Input value={config.videoUrl || ''} onChange={(e) => set('videoUrl', e.target.value)} placeholder="https://youtube.com/watch?v=..." />
-            <p className="text-[10px] text-muted-foreground mt-1">YouTube, Vimeo, or direct video URL</p>
-          </Field>
-        </>
-      )}
-
-      {section.sectionType === 'countdown' && (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Eyebrow"><Input value={config.eyebrow || ''} onChange={(e) => set('eyebrow', e.target.value)} placeholder="Limited time" /></Field>
-            <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          </div>
-          <Field label="Ends at">
-            <Input type="datetime-local" value={config.endDate || ''} onChange={(e) => set('endDate', e.target.value)} />
-            <p className="text-[10px] text-muted-foreground mt-1">The timer hides itself automatically after this moment.</p>
-          </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Button text"><Input value={config.buttonText || ''} onChange={(e) => set('buttonText', e.target.value)} /></Field>
-            <Field label="Button URL"><Input value={config.buttonUrl || ''} onChange={(e) => set('buttonUrl', e.target.value)} /></Field>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <ColorField label="Background" value={config.bg} defaultV="#1a1a1a" onChange={(v) => set('bg', v)} />
-            <ColorField label="Text color" value={config.color} defaultV="#ffffff" onChange={(v) => set('color', v)} />
-          </div>
-        </>
-      )}
-
-      {section.sectionType === 'cta' && (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Eyebrow"><Input value={config.eyebrow || ''} onChange={(e) => set('eyebrow', e.target.value)} /></Field>
-            <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          </div>
-          <Field label="Subtitle"><Textarea rows={2} value={config.subtitle || ''} onChange={(e) => set('subtitle', e.target.value)} /></Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Button text"><Input value={config.buttonText || ''} onChange={(e) => set('buttonText', e.target.value)} /></Field>
-            <Field label="Button URL"><Input value={config.buttonUrl || ''} onChange={(e) => set('buttonUrl', e.target.value)} /></Field>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <ColorField label="Background" value={config.bg} defaultV="#1a1a1a" onChange={(v) => set('bg', v)} />
-            <ColorField label="Text color" value={config.color} defaultV="#ffffff" onChange={(v) => set('color', v)} />
-          </div>
-        </>
-      )}
-
-      {section.sectionType === 'stats' && (
-        <>
-          {(config.items || []).map((item, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Input value={item.value || ''} onChange={(e) => updateListItem('items', i, 'value', e.target.value)} placeholder="10k+" className="h-8 text-xs w-20" />
-              <Input value={item.label || ''} onChange={(e) => updateListItem('items', i, 'label', e.target.value)} placeholder="Label" className="h-8 text-xs flex-1" />
-              <button onClick={() => removeListItem('items', i)} className="text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="h-3.5 w-3.5" /></button>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={() => addListItem('items', { value: '100+', label: 'New stat' })}><Plus className="h-3.5 w-3.5 mr-1" /> Add stat</Button>
-        </>
-      )}
-
-      {section.sectionType === 'logo-cloud' && (
-        <>
-          <Field label="Title (optional)"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} placeholder="As seen in" /></Field>
-          {(config.items || []).map((item, i) => (
-            <div key={i} className="p-2.5 border border-border rounded space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium">#{i + 1}</span>
-                <button onClick={() => removeListItem('items', i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
-              </div>
-              <div className="flex gap-2 items-start">
-                <div className="flex-1 space-y-1.5">
-                  <Input value={item.name || ''} onChange={(e) => updateListItem('items', i, 'name', e.target.value)} placeholder="Name (fallback)" className="h-8 text-xs" />
-                  <Input value={item.link || ''} onChange={(e) => updateListItem('items', i, 'link', e.target.value)} placeholder="Link (optional)" className="h-8 text-xs" />
-                </div>
-                <FileUpload type="image" value={item.image || ''} onChange={(url) => updateListItem('items', i, 'image', url)} />
-              </div>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={() => addListItem('items', { name: 'BRAND', link: '', image: '' })}><Plus className="h-3.5 w-3.5 mr-1" /> Add logo</Button>
-        </>
-      )}
-
-      {section.sectionType === 'contact' && (
-        <>
-          <Field label="Title"><Input value={config.title || ''} onChange={(e) => set('title', e.target.value)} /></Field>
-          <Field label="Subtitle"><Textarea rows={2} value={config.subtitle || ''} onChange={(e) => set('subtitle', e.target.value)} /></Field>
-          <Field label="Contact email shown"><Input value={config.email || ''} onChange={(e) => set('email', e.target.value)} placeholder="hello@yourstore.com" /></Field>
-        </>
-      )}
-
-      {section.sectionType === 'custom-html' && (
-        <Field label="Custom HTML"><Textarea rows={8} value={config.html || ''} onChange={(e) => set('html', e.target.value)} className="font-mono text-xs" /></Field>
-      )}
-    </div>
-  )
-}
-
-// ============================================================
-// Design tab — universal section styling
-// ============================================================
-function DesignEditor({ config, sectionType, onUpdate }) {
-  const design = config.design || {}
-  const set = (k, v) => onUpdate({ ...design, [k]: v })
-  const paddingValue = design.paddingY || PADDING_DEFAULTS[sectionType] || 'md'
-
-  return (
-    <div className="space-y-3.5">
-      <div className="grid grid-cols-2 gap-2">
-        <ColorField label="Background" value={design.bg} defaultV="" onChange={(v) => set('bg', v)} allowEmpty />
-        <ColorField label="Text color" value={design.textColor} defaultV="" onChange={(v) => set('textColor', v)} allowEmpty />
-      </div>
-      <Field label="Vertical spacing">
-        <Select value={paddingValue} onChange={(v) => set('paddingY', v)} options={[['none', 'None'], ['sm', 'Small'], ['md', 'Medium (default)'], ['lg', 'Large'], ['xl', 'Extra large']]} />
-      </Field>
-      <Field label="Content width">
-        <Select value={design.maxWidth || ''} onChange={(v) => set('maxWidth', v)} options={[['', 'Normal (default)'], ['narrow', 'Narrow'], ['wide', 'Wide'], ['full', 'Full width']]} />
-      </Field>
-      <Field label={
-        <span>Custom CSS <span className="text-muted-foreground">(advanced)</span></span>
-      }>
-        <Textarea
-          rows={5}
-          value={design.customCss || ''}
-          onChange={(e) => set('customCss', e.target.value)}
-          className="font-mono text-xs"
-          placeholder={'h2 {\n  letter-spacing: 2px;\n}\nimg {\n  border-radius: 12px;\n}'}
-        />
-        <p className="text-[10px] text-muted-foreground mt-1">Applies only inside this section — selectors are scoped automatically, just like Shopify themes.</p>
-      </Field>
-      <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-        <p className="font-medium text-foreground">Per-section design</p>
-        <p>Background and text color apply to this section only. Clear a color to use the theme default. For a whole-store look, use <strong>Themes</strong> in the left panel.</p>
-      </div>
-    </div>
-  )
-}
-
-// ============================================================
-// Small shared inputs
-// ============================================================
-function Field({ label, children }) {
-  return (
-    <div>
-      <Label className="text-xs">{label}</Label>
-      <div className="mt-1.5">{children}</div>
-    </div>
-  )
-}
-
-function Select({ value, onChange, options }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="h-9 w-full px-2 rounded-md border border-input bg-background text-sm">
-      {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-    </select>
-  )
-}
-
-function ColorField({ label, value, defaultV, onChange, allowEmpty }) {
-  const current = value || defaultV || '#000000'
-  return (
-    <div>
-      <Label className="text-xs">{label}</Label>
-      <div className="flex gap-1.5 mt-1.5">
-        <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(current) ? current : '#000000'} onChange={(e) => onChange(e.target.value)} className="h-9 w-10 rounded border border-input cursor-pointer shrink-0" />
-        <Input value={value ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={allowEmpty ? 'theme default' : defaultV} className="font-mono text-xs" />
-        {allowEmpty && value && (
-          <button onClick={() => onChange('')} className="text-muted-foreground hover:text-foreground shrink-0" title="Reset to theme default"><X className="h-3.5 w-3.5" /></button>
+    >
+      {/* Section label chip */}
+      <div
+        className={cn(
+          'absolute top-0 left-0 z-20 flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-br-md text-[10px] font-medium shadow-sm transition-opacity',
+          selected ? 'bg-[#005bd3] text-white' : 'bg-[#e7f0ff] text-[#0b4a9e] opacity-0 group-hover/sec:opacity-100'
         )}
+      >
+        <button
+          {...attributes}
+          {...listeners}
+          onClick={(e) => e.stopPropagation()}
+          className="p-0.5 cursor-grab active:cursor-grabbing rounded hover:bg-white/20"
+          title="Drag to reorder"
+          aria-label={`Reorder ${meta?.label || type}`}
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+        <Icon className="h-3 w-3" />
+        <span className="max-w-[140px] truncate">{meta?.label || type}</span>
+        {hidden && <span className="opacity-80">· hidden</span>}
       </div>
+
+      {/* Quick actions */}
+      <div
+        className={cn(
+          'absolute top-1.5 right-1.5 z-20 flex items-center gap-0.5 bg-[#1a1a1a]/95 text-white rounded-lg shadow-lg px-0.5 py-0.5 transition-opacity',
+          selected ? 'opacity-100' : 'opacity-0 group-hover/sec:opacity-100'
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ChipBtn title="Move up" disabled={index === 0} onClick={() => onMove(id, -1)}><ArrowUp className="h-3 w-3" /></ChipBtn>
+        <ChipBtn title="Move down" disabled={index === total - 1} onClick={() => onMove(id, 1)}><ArrowDown className="h-3 w-3" /></ChipBtn>
+        <ChipBtn title="Duplicate" onClick={() => onDuplicate(id)}><Copy className="h-3 w-3" /></ChipBtn>
+        <ChipBtn title={hidden ? 'Show' : 'Hide'} onClick={() => onToggleVisible(id)}>{hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}</ChipBtn>
+        <ChipBtn title="Remove" danger onClick={() => onRemove(id)}><Trash2 className="h-3 w-3" /></ChipBtn>
+      </div>
+
+      {children}
     </div>
+  )
+}
+
+function ChipBtn({ title, onClick, disabled, danger, children }: any) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className={cn('p-1 rounded-md disabled:opacity-30', danger ? 'hover:bg-rose-500' : 'hover:bg-white/15')}
+    >
+      {children}
+    </button>
   )
 }
