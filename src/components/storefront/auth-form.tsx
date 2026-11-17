@@ -10,7 +10,7 @@ import { toast } from '@/lib/toast'
 import { useCart } from '@/lib/cart-store'
 import { MailCheck, MailWarning } from 'lucide-react'
 
-export function AuthForm({ mode, nextUrl }) {
+export function AuthForm({ mode, nextUrl, demoCredentials }) {
   const router = useRouter()
   const initGuestId = useCart(s => s.initGuestId)
   const [loading, setLoading] = useState(false)
@@ -69,7 +69,12 @@ export function AuthForm({ mode, nextUrl }) {
       if (!r.ok) throw new Error(d.error || 'Authentication failed')
       toast.success(isLogin ? 'Welcome back!' : 'Account created!', d.user?.email)
       initGuestId() // ensure cart guest id exists
-      router.push(nextUrl)
+      // Admins belong in the admin panel; keep an explicit admin deep link.
+      const isAdmin = d.user?.role === 'ADMIN' || d.user?.role === 'SUPER_ADMIN'
+      const target = isAdmin
+        ? (nextUrl?.startsWith('/admin') ? nextUrl : '/admin')
+        : (nextUrl || '/account')
+      router.push(target)
       router.refresh()
     } catch (err) {
       toast.error('Authentication failed', err.message)
@@ -210,7 +215,15 @@ export function AuthForm({ mode, nextUrl }) {
       </div>
 
       <p className="text-xs text-muted-foreground text-center mt-4">
-        Demo accounts: <code className="bg-muted px-1.5 py-0.5 rounded">admin@shopflar.dev / admin12345</code> · <code className="bg-muted px-1.5 py-0.5 rounded">customer@example.com / customer123</code>
+        {demoCredentials ? (
+          <>
+            Demo account: <code className="bg-muted px-1.5 py-0.5 rounded">{demoCredentials}</code>
+          </>
+        ) : (
+          <>
+            Demo accounts: <code className="bg-muted px-1.5 py-0.5 rounded">admin@shopflar.dev / admin12345</code> · <code className="bg-muted px-1.5 py-0.5 rounded">customer@example.com / customer123</code>
+          </>
+        )}
       </p>
     </div>
   )

@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
-import { chatCompletion, buildStoreContext, type ChatMessage } from '@/lib/ai'
+import {
+  getAiConfig, buildStoreContext, streamChatCompletion, type ChatMessage
+} from '@/lib/ai'
 
-export const maxDuration = 60
+export const maxDuration = 120
 
 const SYSTEM_PROMPT = `You are Shopflar Sidekick, an expert ecommerce operator embedded in the merchant's admin panel.
 You help with merchandising, product copy, pricing, email marketing, customer retention, store design and analytics.
@@ -14,6 +16,8 @@ Rules:
 - If the merchant asks you to change the store, explain exactly where to do it in the admin (Products, Themes, Campaigns, Discounts…) and offer the copy or settings to use.
 - Never reveal or ask for API keys, passwords or other secrets.
 - Format with Markdown: headings sparingly, **bold** for emphasis, lists for steps.`
+
+const encoder = new TextEncoder()
 
 export async function POST(req) {
   try {
@@ -30,28 +34,82 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Send a message to get started.' }, { status: 400 })
     }
 
-    let context = ''
-    try { context = await buildStoreContext() } catch { context = '' }
-    const system = context
-      ? `${SYSTEM_PROMPT}\n\nCurrent store snapshot (live data):\n${context}`
-      : SYSTEM_PROMPT
-
-    try {
-      const reply = await chatCompletion([{ role: 'system', content: system }, ...messages], {
-        temperature: Number(body.temperature ?? 0.6),
-        maxTokens: 900
-      })
-      return NextResponse.json({ reply })
-    } catch (e: any) {
-      if (e.message === 'NO_KEY') {
-        return NextResponse.json({
-          error: 'NO_KEY',
-          message: 'Add your AI API key to start using the assistant. It stays on your server.'
-        }, { status: 400 })
-      }
-      return NextResponse.json({ error: e.message || 'The AI request failed.' }, { status: 502 })
+    const config = await getAiConfig()
+    if (!config.apiKey) {
+      return NextResponse.json({
+        error: 'NO_KEY',
+        message: 'Add your AI API key to start using the assistant. It stays on your server.'
+      }, { status: 400 })
     }
-  } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 400 })
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        let closed = false
+        const send = (event: Record<string, any>) => {
+          if (closed) return
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+          } catch {
+            closed = true
+          }
+        }
+
+        try {
+          // Visible work before the first token, so the UI can show what the
+          // assistant is doing even when the model exposes no reasoning.
+          send({ type: 'thinking', text: 'Reading your live store data…\n' })
+          let context = ''
+          try { context = await buildStoreContext() } catch { context = '' }
+          send({ type: 'thinking', text: 'Reviewing products, orders and customers…\n' })
+
+          const system = context
+            ? `${SYSTEM_PROMPT}\n\nCurrent store snapshot (live data):\n${context}`
+            : SYSTEM_PROMPT
+
+          send({ type: 'thinking', text: 'Planning a concise answer…\n' })
+
+          let characters = 0
+          await streamChatCompletion(
+            config,
+            [{ role: 'system', content: system }, ...messages],
+            { temperature: Number(body.temperature ?? 0.6), maxTokens: 1100 },
+            {
+              onThinking: (text) => send({ type: 'thinking', text }),
+              onDelta: (text) => {
+                characters += text.length
+                send({ type: 'delta', text })
+              }
+            },
+            req.signal
+          )
+
+          send({ type: 'done', characters })
+        } catch (e: any) {
+          if (e.name !== 'AbortError') {
+            send({
+              type: 'error',
+              message: e.message === 'NO_KEY'
+                ? 'Add your AI API key in AI settings to start using the assistant.'
+                : (e.message || 'The AI request failed.'),
+              code: e.message === 'NO_KEY' ? 'NO_KEY' : undefined
+            })
+          }
+        } finally {
+          closed = true
+          try { controller.close() } catch {}
+        }
+      }
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no'
+      }
+    })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message || 'The AI request failed.' }, { status: 400 })
   }
 }

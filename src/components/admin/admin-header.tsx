@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  Menu, ExternalLink, LogOut, ChevronDown, Search, Bell, CircleHelp, Sparkles, Home
+  Menu, ExternalLink, LogOut, ChevronDown, Search, Bell, CircleHelp, Sparkles, Home, FlaskConical
 } from 'lucide-react'
 import {
   Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetClose
@@ -25,7 +25,7 @@ const LABELS: Record<string, string> = {
   plugins: 'Plugins', settings: 'Store settings', users: 'Users & admins',
   business: 'Business details', legal: 'Legal pages', email: 'Email & SMTP',
   tracking: 'Tracking & pixels', notifications: 'Notifications', logs: 'Reports',
-  'store-mode': 'Store mode', updater: 'Updates', ai: 'AI Assistant', new: 'New'
+  'store-mode': 'Store mode', updater: 'Updates', ai: 'AI Assistant', demo: 'Demo', new: 'New'
 }
 
 function useBreadcrumbs() {
@@ -48,7 +48,7 @@ function useBreadcrumbs() {
   return crumbs.filter(c => !(crumbs.length === 1 && c.label === 'Home'))
 }
 
-export function AdminHeader({ user, storeName }) {
+export function AdminHeader({ user, storeName, demo = false }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const pathname = usePathname()
@@ -126,8 +126,19 @@ export function AdminHeader({ user, storeName }) {
             <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#8a8a8a] border border-[#d9d9d9] rounded px-1 py-0.5 bg-white">/</kbd>
           </form>
 
-          <Link
-            href="/admin/ai"
+          {demo && (
+            <Link
+              href="/admin/demo"
+              className="hidden sm:flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-[#f0d9a8] bg-[#fffaf0] text-[11px] font-medium text-[#8a4b00] hover:bg-[#fff4df]"
+              title="Demo mode is on"
+            >
+              <FlaskConical className="h-3.5 w-3.5" /> Demo
+            </Link>
+          )}
+
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event('sidekick:open'))}
             className={cn(
               'hidden sm:flex items-center gap-1.5 h-8 px-3 rounded-lg border text-[12px] font-medium transition-colors',
               pathname.startsWith('/admin/ai')
@@ -136,7 +147,7 @@ export function AdminHeader({ user, storeName }) {
             )}
           >
             <Sparkles className="h-3.5 w-3.5" /> Ask AI
-          </Link>
+          </button>
 
           <Link
             href="/"

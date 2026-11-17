@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { verifyPassword } from '@/lib/password'
 import { createSession } from '@/lib/auth'
 import { isVerificationEnforced } from '@/lib/verification'
+import { demoGuard } from '@/lib/demo'
 import { z } from 'zod'
 
 const loginSchema = z.object({
@@ -17,6 +18,8 @@ export async function POST(req) {
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
     }
+    // Demo databases reset after a period of inactivity, including the demo admin.
+    await demoGuard()
     const email = parsed.data.email.toLowerCase().trim()
     const user = await db.user.findUnique({ where: { email } })
     if (!user || !user.passwordHash) {

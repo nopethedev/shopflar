@@ -111,6 +111,114 @@ export async function chatCompletion(messages: ChatMessage[], opts: { temperatur
   }
 }
 
+export type StreamHandlers = {
+  onThinking?: (chunk: string) => void
+  onDelta?: (chunk: string) => void
+}
+
+// Streams an OpenAI-compatible chat completion. Reasoning tokens exposed by
+// providers as `reasoning_content` / `reasoning` are forwarded to onThinking so
+// the UI can show the model's thought process separately from the answer.
+export async function streamChatCompletion(
+  config: AiConfig,
+  messages: ChatMessage[],
+  opts: { temperature?: number; maxTokens?: number },
+  handlers: StreamHandlers,
+  signal?: AbortSignal
+): Promise<string> {
+  if (!config.apiKey) throw new Error('NO_KEY')
+
+  const controller = new AbortController()
+  const onAbort = () => controller.abort()
+  if (signal) {
+    if (signal.aborted) controller.abort()
+    else signal.addEventListener('abort', onAbort)
+  }
+  const timer = setTimeout(() => controller.abort(), 120_000)
+
+  try {
+    const res = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+        Accept: 'text/event-stream'
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature: opts.temperature ?? 0.6,
+        max_tokens: opts.maxTokens ?? 1100,
+        stream: true
+      }),
+      signal: controller.signal
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      let data: any = null
+      try { data = JSON.parse(text) } catch { /* non-JSON error body */ }
+      const providerMessage = data?.error?.message || data?.message || text.slice(0, 300)
+      const err = new Error(`AI provider returned ${res.status}${providerMessage ? `: ${providerMessage}` : ''}`)
+      ;(err as any).status = res.status
+      throw err
+    }
+    if (!res.body) throw new Error('The AI provider did not return a stream.')
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let content = ''
+
+    const handlePayload = (payload: string) => {
+      if (!payload || payload === '[DONE]') return
+      let json: any
+      try { json = JSON.parse(payload) } catch { return }
+      if (json.error) throw new Error(json.error.message || 'The AI provider returned an error.')
+      const choice = json.choices?.[0] || {}
+      const delta = choice.delta || choice.message || {}
+      const reasoning = delta.reasoning_content ?? delta.reasoning
+      if (typeof reasoning === 'string' && reasoning) handlers.onThinking?.(reasoning)
+      const piece = typeof delta.content === 'string' ? delta.content : ''
+      if (piece) {
+        content += piece
+        handlers.onDelta?.(piece)
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const events = buffer.split(/\r?\n\r?\n/)
+      buffer = events.pop() || ''
+      for (const event of events) {
+        for (const line of event.split(/\r?\n/)) {
+          if (!line.startsWith('data:')) continue
+          handlePayload(line.slice(5).trim())
+        }
+      }
+    }
+    if (buffer.trim()) {
+      for (const line of buffer.split(/\r?\n/)) {
+        if (line.startsWith('data:')) handlePayload(line.slice(5).trim())
+      }
+    }
+
+    if (!content.trim()) throw new Error('The AI provider returned an empty response.')
+    return content
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      if (signal?.aborted) throw e
+      throw new Error('The AI request timed out after 120 seconds. Try a smaller model.')
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+  }
+}
+
 // Compact, factual store snapshot injected as context so the assistant can
 // answer questions about the actual store instead of guessing.
 export async function buildStoreContext(): Promise<string> {

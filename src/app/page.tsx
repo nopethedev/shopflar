@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { db } from '@/lib/db'
 import { getStoreSettings } from '@/lib/settings'
 import { getSessionUser } from '@/lib/auth'
+import { demoGuard, isDemoMode } from '@/lib/demo'
 import { StorefrontLayout } from '@/components/storefront/storefront-layout'
 import { ProductCard } from '@/components/storefront/product-card'
 import { NewsletterForm } from '@/components/storefront/newsletter-form'
@@ -11,6 +12,9 @@ import { ArrowRight, Truck, RotateCcw, ShieldCheck, Sparkles } from 'lucide-reac
 export const dynamic = 'force-dynamic'
 
 export default async function HomePage({ searchParams }) {
+  // Seed the disposable demo on the first storefront visit (Cloudflare has no
+  // deploy-time seed step), and reset it after the inactivity window.
+  if (isDemoMode()) await demoGuard()
   const params = await searchParams
   // Draft preview: admins can see unpublished builder changes via /?preview=1
   let previewDrafts = false

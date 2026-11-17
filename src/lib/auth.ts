@@ -34,10 +34,14 @@ export async function createSession(user) {
   }
   const token = await sign(payload)
   const cookieStore = await cookies()
+  // Embedded previews (e.g. the Browser panel iframe) are cross-site, where
+  // SameSite=Lax cookies are dropped. SESSION_COOKIE_SAMESITE="none" opts into
+  // cross-site cookies; it requires Secure, so it only applies over HTTPS.
+  const crossSite = process.env.SESSION_COOKIE_SAMESITE === 'none'
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production' || crossSite,
+    sameSite: crossSite ? 'none' : 'lax',
     maxAge: SESSION_TTL,
     path: '/'
   })

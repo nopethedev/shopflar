@@ -68,3 +68,6 @@ public/uploads/*
 # local sqlite database (prisma file: URLs resolve next to the schema)
 /prisma/db/
 /db/
+/freebuff-sites-build/
+/.open-next/
+/.wrangler/
