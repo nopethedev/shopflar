@@ -47,11 +47,13 @@ export default async function HomePage({ searchParams }) {
       ? db.pageSection.findMany({
           where: { pageType: 'home', isDeleted: false },
           orderBy: { sortOrder: 'asc' }
-        }).then(rows => rows.map(s => ({
-          ...s,
-          config: s.draftConfig || s.config,
-          isVisible: s.isVisible
-        })))
+        }).then(rows => rows
+          .sort((a, b) => (a.draftSortOrder ?? a.sortOrder) - (b.draftSortOrder ?? b.sortOrder))
+          .map(s => ({
+            ...s,
+            config: s.draftConfig || s.config,
+            isVisible: s.isVisible
+          })))
       : db.pageSection.findMany({
           where: { pageType: 'home', isDraft: false, isDeleted: false },
           orderBy: { sortOrder: 'asc' }

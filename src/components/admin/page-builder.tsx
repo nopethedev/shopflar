@@ -491,7 +491,7 @@ export function PageBuilder({
 
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
         {/* ===== Left panel ===== */}
-        <aside className="w-full lg:w-[280px] shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-[#e3e3e3] flex flex-col lg:min-h-0">
+        <aside data-builder-left className="w-full lg:w-[280px] shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-[#e3e3e3] flex flex-col lg:min-h-0">
           <div className="flex items-center gap-1 px-2 pt-2">
             <button
               onClick={() => setLeftTab('sections')}
@@ -517,7 +517,7 @@ export function PageBuilder({
                 <p className="text-[11px] text-[#8a8a8a] mt-0.5 truncate">{pageLabel}</p>
               </div>
 
-              <div className="flex-1 lg:overflow-y-auto p-2 space-y-0.5">
+              <div data-builder-tree className="flex-1 lg:overflow-y-auto p-2 space-y-0.5">
                 <GlobalRow label="Header" hint="Navigation & branding" />
                 {sections.length === 0 && (
                   <div className="px-2 py-6 text-center">
@@ -533,6 +533,8 @@ export function PageBuilder({
                   return (
                     <div
                       key={section.id}
+                      data-section-id={section.id}
+                      data-section-type={section.sectionType}
                       onClick={() => { setSelectedId(section.id); setRightTab('content'); setMode('edit') }}
                       className={cn(
                         'group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer border',
@@ -606,6 +608,7 @@ export function PageBuilder({
                         {items.map(t => (
                           <button
                             key={t.type}
+                            data-block-type={t.type}
                             draggable
                             onDragStart={(e) => {
                               e.dataTransfer.setData('application/x-section-type', t.type)
@@ -644,7 +647,7 @@ export function PageBuilder({
         </aside>
 
         {/* ===== Canvas ===== */}
-        <main className="flex-1 min-w-0 flex flex-col bg-[#e9e9e9]">
+        <main data-builder-canvas-area className="flex-1 min-w-0 flex flex-col bg-[#e9e9e9]">
           <div className="flex-1 min-h-0 overflow-auto p-3 md:p-6">
             <div
               className="mx-auto transition-[max-width] duration-300"
@@ -681,6 +684,7 @@ export function PageBuilder({
                 </div>
               ) : (
                 <div
+                  data-builder-canvas
                   className={cn(
                     'bg-white border border-[#dcdcdc] rounded-b-xl overflow-hidden relative',
                     paletteOver && 'ring-2 ring-[#005bd3]'
@@ -962,6 +966,8 @@ function SortableBlock({ id, index, total, selected, hidden, type, meta, onSelec
     <div
       ref={setNodeRef}
       style={style}
+      data-section-id={id}
+      data-section-type={type}
       onClick={onSelect}
       className={cn(
         'group/sec relative transition-shadow',

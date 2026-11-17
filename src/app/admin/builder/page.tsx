@@ -11,13 +11,14 @@ export default async function AdminBuilderPage({ searchParams }) {
 
   const [sections, categories, customPages, activeThemeRow] = await Promise.all([
     db.pageSection.findMany({
-      where: { pageType, ...(pageId ? { pageId } : {}) },
-      orderBy: { sortOrder: 'asc' }
+      where: { pageType, ...(pageId ? { pageId } : {}) }
     }),
     db.category.findMany({ where: { isVisible: true }, orderBy: { sortOrder: 'asc' } }),
     db.customPage.findMany({ select: { id: true, title: true, slug: true, status: true }, orderBy: { title: 'asc' } }),
     db.storeSetting.findUnique({ where: { key: 'active_theme' } })
   ])
+  // Draft order wins over the published order so a drag survives a reload.
+  sections.sort((a, b) => (a.draftSortOrder ?? a.sortOrder) - (b.draftSortOrder ?? b.sortOrder))
   const themeName = getTheme(activeThemeRow?.value || 'dawn')?.name || 'Dawn'
 
   // Parse section configs — prefer draftConfig if it exists (editor shows draft)

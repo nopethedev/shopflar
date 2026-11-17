@@ -18,6 +18,7 @@ export async function GET(req) {
     // If includeDraft, merge draft config into the response for the editor
     // The storefront only gets published config (includeDraft=false)
     if (includeDraft) {
+      sections = [...sections].sort((a, b) => (a.draftSortOrder ?? a.sortOrder) - (b.draftSortOrder ?? b.sortOrder))
       sections = sections.map(s => {
         if (s.draftConfig) {
           return { ...s, config: s.draftConfig } // editor sees draft version
