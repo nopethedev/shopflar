@@ -23,6 +23,15 @@ export async function PATCH(req, { params }) {
       where: { id: params.id },
       select: { status: true, orderNumber: true }
     })
+
+    // Cancelled/refunded orders must never be marked as fulfilled, even if a
+    // stale admin tab still shows a bulk action for them.
+    if (body.fulfillmentStatus === 'FULFILLED' && previous && ['CANCELLED', 'REFUNDED', 'FAILED'].includes(previous.status)) {
+      return NextResponse.json(
+        { error: `Order ${previous.orderNumber} is ${previous.status.toLowerCase()} and cannot be fulfilled` },
+        { status: 400 }
+      )
+    }
     const updated = await db.order.update({ where: { id: params.id }, data })
 
     if (body.status && previous && previous.status !== body.status) {

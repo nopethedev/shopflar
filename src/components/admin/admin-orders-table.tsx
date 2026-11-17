@@ -52,7 +52,12 @@ export function AdminOrdersTable({ orders, total, page, limit, tab, search, stat
   const [busy, setBusy] = useState(false)
 
   const pages = Math.max(1, Math.ceil(total / limit))
-  const allSelected = orders.length > 0 && orders.every(o => selected.includes(o.id))
+  // Archived orders can't be fulfilled; keep them out of selection entirely.
+  const ARCHIVED_STATUSES = ['CANCELLED', 'REFUNDED', 'FAILED']
+  const canFulfill = (o: any) => !ARCHIVED_STATUSES.includes(o.status)
+  const eligibleOrders = orders.filter(canFulfill)
+  const allSelected = eligibleOrders.length > 0 && eligibleOrders.every(o => selected.includes(o.id))
+  const eligibleSelected = orders.filter(o => selected.includes(o.id) && canFulfill(o))
 
   const go = (next: Record<string, string | number | undefined>) => {
     const params = new URLSearchParams()
@@ -100,10 +105,13 @@ export function AdminOrdersTable({ orders, total, page, limit, tab, search, stat
   }
 
   const markFulfilled = async () => {
-    if (!selected.length) return
+    if (!eligibleSelected.length) {
+      toast.error('Nothing to fulfill', 'Cancelled and refunded orders cannot be fulfilled.')
+      return
+    }
     setBusy(true)
     let done = 0
-    for (const id of selected) {
+    for (const id of eligibleSelected.map(o => o.id)) {
       const r = await fetch(`/api/admin/orders/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -112,9 +120,14 @@ export function AdminOrdersTable({ orders, total, page, limit, tab, search, stat
       if (r.ok) done++
     }
     setBusy(false)
+    const skipped = selected.length - eligibleSelected.length
     setSelected([])
-    if (done) toast.success(`${done} order${done === 1 ? '' : 's'} marked as fulfilled`)
-    else toast.error('Could not update orders')
+    if (done) {
+      toast.success(
+        `${done} order${done === 1 ? '' : 's'} marked as fulfilled`,
+        skipped ? `${skipped} cancelled or refunded order${skipped === 1 ? '' : 's'} skipped` : undefined
+      )
+    } else toast.error('Could not update orders')
     router.refresh()
   }
 
@@ -196,7 +209,7 @@ export function AdminOrdersTable({ orders, total, page, limit, tab, search, stat
                   <input
                     type="checkbox"
                     checked={allSelected}
-                    onChange={(e) => setSelected(e.target.checked ? orders.map(o => o.id) : [])}
+                    onChange={(e) => setSelected(e.target.checked ? eligibleOrders.map(o => o.id) : [])}
                     className="h-3.5 w-3.5 rounded border-[#c9c9c9]"
                     aria-label="Select all orders on this page"
                   />
@@ -233,8 +246,10 @@ export function AdminOrdersTable({ orders, total, page, limit, tab, search, stat
                       <input
                         type="checkbox"
                         checked={selected.includes(o.id)}
+                        disabled={!canFulfill(o)}
+                        title={canFulfill(o) ? undefined : 'Cancelled and refunded orders cannot be fulfilled'}
                         onChange={(e) => setSelected(e.target.checked ? [...selected, o.id] : selected.filter(id => id !== o.id))}
-                        className="h-3.5 w-3.5 rounded border-[#c9c9c9]"
+                        className="h-3.5 w-3.5 rounded border-[#c9c9c9] disabled:opacity-30"
                         aria-label={`Select order ${o.orderNumber}`}
                       />
                     </td>

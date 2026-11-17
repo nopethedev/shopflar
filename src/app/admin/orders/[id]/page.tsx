@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { resolveCarrierUrl } from '@/lib/tracking'
 import { AdminOrderActions } from '@/components/admin/admin-order-actions'
+import { OrderEditor } from '@/components/admin/order-editor'
 import { ArrowLeft, ExternalLink, Mail, MapPin, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -38,7 +39,22 @@ export default async function AdminOrderDetailPage({ params }) {
 
   if (!order) notFound()
 
-  const customerOrders = await db.order.count({ where: { email: order.email } })
+  const [customerOrders, products] = await Promise.all([
+    db.order.count({ where: { email: order.email } }),
+    db.product.findMany({
+      where: { status: 'PUBLISHED' },
+      orderBy: { name: 'asc' },
+      take: 200,
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        sku: true,
+        images: { take: 1, orderBy: { sortOrder: 'asc' }, select: { url: true } },
+        variants: { select: { id: true, name: true, price: true, sku: true } }
+      }
+    })
+  ])
   const trackingUrl = order.trackingUrl || (order.trackingNumber ? resolveCarrierUrl(order.trackingCarrier, order.trackingNumber) : null)
   const payment = PAYMENT_BADGE[order.paymentStatus] || { label: order.paymentStatus, cls: 'sf-badge-neutral' }
   const fulfilled = order.fulfillmentStatus === 'FULFILLED'
@@ -97,6 +113,30 @@ export default async function AdminOrderDetailPage({ params }) {
             </p>
           </div>
         </div>
+        {!['CANCELLED', 'REFUNDED'].includes(order.status) && (
+          <OrderEditor
+            products={products}
+            order={{
+              id: order.id,
+              orderNumber: order.orderNumber,
+              items: order.items.map(it => ({
+                id: it.id,
+                name: it.name,
+                variantName: it.variantName,
+                sku: it.sku,
+                price: it.price,
+                quantity: it.quantity,
+                imageUrl: it.imageUrl
+              })),
+              shippingAddress: order.shippingAddress,
+              currency: order.currency,
+              subtotal: order.subtotal,
+              discountTotal: order.discountTotal,
+              shippingTotal: order.shippingTotal,
+              taxTotal: order.taxTotal
+            }}
+          />
+        )}
       </div>
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">

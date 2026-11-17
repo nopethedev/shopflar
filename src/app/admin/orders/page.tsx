@@ -11,7 +11,9 @@ function tabWhere(tab: string) {
     case 'unfulfilled':
       return { fulfillmentStatus: { not: 'FULFILLED' }, status: { notIn: ARCHIVED } }
     case 'unpaid':
-      return { paymentStatus: { not: 'PAID' }, status: { notIn: ARCHIVED } }
+      // Partially/fully refunded orders were paid — only genuinely unpaid
+      // orders belong here (Shopify's "Payment pending" view).
+      return { paymentStatus: 'UNPAID', status: { notIn: ARCHIVED } }
     case 'open':
       return { status: { in: OPEN } }
     case 'archived':
