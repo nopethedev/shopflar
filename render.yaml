@@ -1,0 +1,39 @@
+# Render blueprint: Docker web service with a persistent disk.
+# After the first deploy, set the public URLs to https://<service>.onrender.com
+# (or your custom domain) in the Render dashboard.
+services:
+  - type: web
+    name: shopflar
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: oregon
+    healthCheckPath: /login
+    autoDeploy: true
+    disk:
+      name: shopflar-data
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: DATABASE_URL
+        value: file:/data/shopflar.db
+      - key: DEMO_MODE
+        value: "true"
+      - key: DEMO_RESET_MINUTES
+        value: "30"
+      - key: RUN_DB_PUSH
+        value: "true"
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        sync: false
+      - key: AI_MODEL
+        sync: false

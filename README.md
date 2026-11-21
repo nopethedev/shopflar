@@ -245,25 +245,22 @@ bun run start
 ### Deploy targets
 
 - **Vercel**: import the repo and deploy. Set environment variables in the Vercel dashboard. Switch database to PostgreSQL/Supabase.
-- **Docker**: a typical Dockerfile:
-  ```dockerfile
-  FROM oven/bun:1 as base
-  WORKDIR /app
-  COPY package.json bun.lock ./
-  RUN bun install --frozen-lockfile --production
-  COPY . .
-  RUN bun run db:generate
-  RUN bun run build
-  EXPOSE 3000
-  CMD ["bun", "run", "start"]
+- **Docker**: the included `Dockerfile` runs the production Next server with a
+  `/data` volume for SQLite, demo state, and uploads:
+  ```bash
+  cp .env.docker.example .env.docker   # set NEXTAUTH_SECRET and your public URLs
+  docker compose --env-file .env.docker up -d --build
   ```
-- **Self-hosted**: build & run on any Node 18+ server. Reverse proxy with Caddy/Nginx.
+  Prebuilt images are published to GHCR by GitHub Actions. See
+  [DEPLOY.md](DEPLOY.md) for the env vars, Render blueprint, and running the
+  image without Compose.
+- **Self-hosted**: build & run on any Node 20+ server. Reverse proxy with Caddy/Nginx.
 
 ### Production checklist
 
 - [ ] Set `NODE_ENV=production`
 - [ ] Generate a strong `NEXTAUTH_SECRET` (`openssl rand -base64 32`)
-- [ ] Switch database to PostgreSQL/Supabase
+- [ ] Keep SQLite on a persistent volume (Docker) or switch to PostgreSQL/Supabase
 - [ ] Set `NEXT_PUBLIC_APP_URL` to your production URL
 - [ ] Configure Stripe webhooks for production
 - [ ] Configure PayPal webhooks for production

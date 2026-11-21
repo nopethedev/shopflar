@@ -1,0 +1,26 @@
+.git
+.gitignore
+.github
+node_modules
+.next
+.open-next
+.wrangler
+freebuff-sites-build
+freebuff.open-next.config.ts
+freebuff.wrangler.jsonc
+
+# Local state and secrets are provided at runtime.
+.env
+.env.*
+!.env.docker.example
+db
+public/uploads
+*.db
+*.db-journal
+*.log
+
+artifacts
+download
+updates
+skills
+tool-results
