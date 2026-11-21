@@ -53,7 +53,7 @@ commit them.
 
 ## Run the published GHCR image
 
-Every push to `main` builds `linux/amd64` and `linux/arm64` images with
+Every push to `main` builds a `linux/amd64` image with
 `.github/workflows/docker-publish.yml`:
 
 ```bash
