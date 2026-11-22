@@ -7,12 +7,15 @@ import { ThemeStyle } from '@/components/storefront/theme-style'
 import { getCustomNavPages, getStoreMode } from '@/lib/settings'
 import { StoreModePage } from '@/components/storefront/store-mode-page'
 import { getSessionUser } from '@/lib/auth'
+import { AppEmbeds } from '@/components/storefront/app-embeds'
+import { getStorefrontEmbeds } from '@/lib/embeds'
 
 export async function StorefrontLayout({ children, settings, categories, bypassModeCheck = false }) {
-  const [customPages, storeMode, sessionUser] = await Promise.all([
+  const [customPages, storeMode, sessionUser, embeds] = await Promise.all([
     getCustomNavPages(),
     getStoreMode(),
-    getSessionUser()
+    getSessionUser(),
+    getStorefrontEmbeds().catch(() => [])
   ])
 
   // Admins bypass maintenance/prelaunch mode so they can preview the store
@@ -38,6 +41,7 @@ export async function StorefrontLayout({ children, settings, categories, bypassM
         <main id="main-content" className="flex-1">{children}</main>
         <StoreFooter settings={settings} />
         <CookieConsentBanner />
+        <AppEmbeds embeds={embeds} />
       </div>
     </SessionProvider>
   )

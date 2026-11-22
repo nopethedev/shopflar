@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, like } from '@/lib/db'
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url)
@@ -21,11 +21,11 @@ export async function GET(req) {
     ...(ids ? { id: { in: ids.split(',') } } : {}),
     ...(search ? {
       OR: [
-        { name: { contains: search } },
-        { description: { contains: search } },
-        { sku: { contains: search } },
-        { shortDescription: { contains: search } },
-        { tags: { some: { tag: { contains: search } } } }
+        { name: like(search) },
+        { description: like(search) },
+        { sku: like(search) },
+        { shortDescription: like(search) },
+        { tags: { some: { tag: like(search) } } }
       ]
     } : {}),
     price: { gte: minPrice, lte: maxPrice },

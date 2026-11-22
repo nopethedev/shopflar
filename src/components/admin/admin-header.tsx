@@ -22,7 +22,7 @@ const LABELS: Record<string, string> = {
   builder: 'Theme editor', themes: 'Themes', appearance: 'Navigation & branding',
   pages: 'Pages', reviews: 'Reviews', shipping: 'Shipping', tax: 'Taxes',
   payments: 'Payments', fulfillment: 'Fulfillment', printify: 'Printify',
-  plugins: 'Plugins', settings: 'Store settings', users: 'Users & admins',
+  apps: 'App Library', plugins: 'App Library', mcp: 'MCP server', 'mystery-crate': 'Mystery Crate', settings: 'Store settings', users: 'Users & admins',
   business: 'Business details', legal: 'Legal pages', email: 'Email & SMTP',
   tracking: 'Tracking & pixels', notifications: 'Notifications', logs: 'Reports',
   'store-mode': 'Store mode', updater: 'Updates', ai: 'AI Assistant', demo: 'Demo', new: 'New'
@@ -118,6 +118,13 @@ export function AdminHeader({ user, storeName, demo = false }) {
           <form onSubmit={submitSearch} className="hidden md:block relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8a8a8a]" />
             <input
+              type="search"
+              name="admin-product-search"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
+              aria-label="Search products"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search products"

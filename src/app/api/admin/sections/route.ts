@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth'
 import { sanitizeSectionConfig } from '@/lib/sanitize'
+import { getEditorSections, getRenderableSections, withDraft } from '@/lib/page-sections'
 
 // GET /api/admin/sections?pageType=home&pageId=xxx&includeDraft=true
 export async function GET(req) {
@@ -11,62 +12,40 @@ export async function GET(req) {
     const pageType = searchParams.get('pageType') || 'home'
     const pageId = searchParams.get('pageId') || null
     const includeDraft = searchParams.get('includeDraft') !== 'false'
-
-    const where = { pageType, ...(pageId ? { pageId } : {}) }
-    let sections = await db.pageSection.findMany({ where, orderBy: { sortOrder: 'asc' } })
-
-    // If includeDraft, merge draft config into the response for the editor
-    // The storefront only gets published config (includeDraft=false)
-    if (includeDraft) {
-      sections = [...sections].sort((a, b) => (a.draftSortOrder ?? a.sortOrder) - (b.draftSortOrder ?? b.sortOrder))
-      sections = sections.map(s => {
-        if (s.draftConfig) {
-          return { ...s, config: s.draftConfig } // editor sees draft version
-        }
-        return s
-      })
-    } else {
-      // Storefront: exclude draft-only sections and deleted sections
-      sections = sections.filter(s => !s.isDraft && !s.isDeleted)
-    }
-
-    // Parse configs for the response
-    const parsed = sections.map(s => ({
-      ...s,
-      config: (() => { try { return JSON.parse(s.config) } catch { return {} } })()
-    }))
-
-    return NextResponse.json({ sections: parsed })
+    const sections = includeDraft
+      ? await getEditorSections(pageType, pageId)
+      : await getRenderableSections(pageType, pageId, false)
+    return NextResponse.json({ sections })
   } catch (e) {
     console.error('GET sections error:', e)
     return NextResponse.json({ error: e.message }, { status: 400 })
   }
 }
 
-// POST — create a new section (in draft mode)
+// POST — create a new section. It starts as a draft: invisible to the public
+// storefront until the page is published.
 export async function POST(req) {
   try {
     await requireAdmin()
     const body = await req.json()
-
-    // Sanitize the config
-    const cleanConfig = sanitizeSectionConfig(body.config || {})
-
+    if (!body.sectionType || typeof body.sectionType !== 'string') {
+      return NextResponse.json({ error: 'sectionType is required' }, { status: 400 })
+    }
+    const pageType = body.pageType || 'home'
+    const cleanConfig = JSON.stringify(sanitizeSectionConfig(body.config || {}))
     const section = await db.pageSection.create({
       data: {
-        pageType: body.pageType || 'home',
-        pageId: body.pageId || null,
+        pageType,
+        pageId: pageType === 'home' ? null : body.pageId || null,
         sectionType: body.sectionType,
-        config: JSON.stringify(cleanConfig), // published config (empty for draft-only)
-        draftConfig: JSON.stringify(cleanConfig), // draft config = what editor sees
-        sortOrder: body.sortOrder || 0,
+        config: cleanConfig,
+        draftConfig: cleanConfig,
+        sortOrder: Number.isFinite(+body.sortOrder) ? Math.trunc(+body.sortOrder) : 0,
         isVisible: body.isVisible !== false,
-        isDraft: true // new sections start as draft
+        isDraft: true
       }
     })
-    return NextResponse.json({
-      section: { ...section, config: JSON.parse(section.draftConfig || section.config) }
-    })
+    return NextResponse.json({ section: withDraft(section) })
   } catch (e) {
     console.error('Create section error:', e)
     return NextResponse.json({ error: e.message }, { status: 400 })

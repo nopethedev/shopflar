@@ -52,7 +52,7 @@ const NAV: NavGroup[] = [
   {
     id: 'apps', label: 'Apps', icon: Boxes, items: [
       { label: 'Printify', href: '/admin/printify', icon: Plug },
-      { label: 'Plugins', href: '/admin/plugins', icon: Puzzle }
+      { label: 'App Library', href: '/admin/apps', icon: Puzzle }
     ]
   },
   {

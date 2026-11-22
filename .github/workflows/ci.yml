@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (SQLite) & schema check (PostgreSQL)
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: file:./ci.db
+      NEXTAUTH_SECRET: ci-secret-ci-secret-ci-secret
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: bun install --frozen-lockfile
+      - run: bunx prisma generate
+      - run: bunx prisma db push --skip-generate
+      - name: Next.js build
+        run: bun run build
+
+      - name: Prisma schema is valid on PostgreSQL
+        run: |
+          sed 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma > /tmp/schema.pg.prisma
+          DATABASE_URL=postgresql://u:p@localhost:5432/x bunx prisma validate --schema /tmp/schema.pg.prisma

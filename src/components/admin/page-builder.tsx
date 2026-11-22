@@ -1,4 +1,16 @@
 'use client'
+// Theme editor.
+//
+// The canvas is the *real* storefront, rendered by the server in an iframe
+// (`?preview=1`, admin-only) — so what you edit is exactly what shoppers get,
+// at the real breakpoints. The iframe talks back through PreviewBridge:
+// clicking a section selects it here, and every save triggers a soft refresh
+// that keeps the scroll position.
+//
+// Editing model: every change is applied locally first (instant), pushed to
+// the server as a *draft* in debounced batches, and only goes live when you
+// press Publish. Undo/redo operates on whole snapshots, including adding,
+// removing, hiding and reordering sections.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -11,7 +23,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   SECTION_CATALOG, GROUPS, defaultConfig, TEMPLATES,
-  SectionPreview, SectionConfigEditor, DesignEditor
+  SectionConfigEditor, DesignEditor, EditorContext
 } from './builder-parts'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
@@ -19,7 +31,7 @@ import {
   X, Plus, Search, GripVertical, Eye, EyeOff, Trash2, Copy, ArrowUp, ArrowDown,
   Monitor, Tablet, Smartphone, Undo2, Redo2, Upload, RotateCcw, ExternalLink,
   MousePointerClick, Layers, Lock, ChevronDown, RefreshCw, Sparkles, Settings2,
-  PanelLeft, Globe, Save, Check
+  PanelLeft, PanelRight, Save, Check, AlertTriangle, Loader2
 } from 'lucide-react'
 
 const DEVICES = [
@@ -28,27 +40,42 @@ const DEVICES = [
   { id: 'mobile', icon: Smartphone, label: 'Mobile', width: 390 }
 ]
 
-const configOf = (section: any) => {
-  if (!section) return {}
-  if (typeof section.config === 'string') {
-    try { return JSON.parse(section.config) } catch { return {} }
-  }
-  return section.config || {}
+type Sec = {
+  id: string
+  sectionType: string
+  config: Record<string, any>
+  isVisible: boolean
+  isDeleted?: boolean
+  [key: string]: any
 }
+
+type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
 const metaFor = (type: string) => SECTION_CATALOG.find(t => t.type === type)
 
-const subtitleFor = (section: any) => {
-  const c = configOf(section)
-  if (c.title) return String(c.title).replace(/<[^>]+>/g, '')
-  if (c.text) return String(c.text)
-  if (c.content) return String(c.content).replace(/<[^>]+>/g, '')
-  return ''
+const subtitleFor = (section: Sec) => {
+  const c = section.config || {}
+  const raw = c.title || c.text || c.content || c.body || c.html || ''
+  return String(raw).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 }
+
+const isTyping = (el: EventTarget | null) => {
+  const node = el as HTMLElement | null
+  if (!node) return false
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName) || node.isContentEditable
+}
+
+const normalize = (s: any): Sec => ({
+  ...s,
+  config: s.config && typeof s.config === 'object' ? s.config : {},
+  isVisible: s.isVisible !== false,
+  isDeleted: false
+})
 
 export function PageBuilder({
   initialSections,
-  categories,
+  categories = [],
+  products = [],
   pageType = 'home',
   pageId = null,
   themeName = 'Dawn',
@@ -56,158 +83,255 @@ export function PageBuilder({
   publicPath = '/',
   initialDirty = false,
   pages = []
-}) {
+}: any) {
   const router = useRouter()
-  const [sections, setSections] = useState<any[]>(initialSections)
+  const [sections, setSections] = useState<Sec[]>(() => initialSections.map(normalize))
+  const sectionsRef = useRef<Sec[]>(sections)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [device, setDevice] = useState('desktop')
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [leftTab, setLeftTab] = useState<'sections' | 'add'>('sections')
   const [rightTab, setRightTab] = useState('content')
   const [dirty, setDirty] = useState(initialDirty)
   const [publishing, setPublishing] = useState(false)
-  const [saving, setSaving] = useState(0)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
   const [paletteSearch, setPaletteSearch] = useState('')
   const [addingType, setAddingType] = useState<string | null>(null)
-  const [activeDragId, setActiveDragId] = useState<string | null>(null)
-  const [paletteOver, setPaletteOver] = useState(false)
+  const [insertIndex, setInsertIndex] = useState<number | null>(null)
   const [showTemplates, setShowTemplates] = useState(false)
+  const [showLeft, setShowLeft] = useState(true)
+  const [showRight, setShowRight] = useState(true)
   const [previewKey, setPreviewKey] = useState(0)
+  const [previewLoading, setPreviewLoading] = useState(true)
   const [host, setHost] = useState('your-store')
+  const [notice, setNotice] = useState<{ text: string; undo?: boolean } | null>(null)
 
-  const historyRef = useRef<string[]>([])
-  const futureRef = useRef<string[]>([])
-  const [histCount, setHistCount] = useState(0)
-  const [futureCount, setFutureCount] = useState(0)
-  const timersRef = useRef<Record<string, any>>({})
+  // history = snapshots of the full section list
+  const past = useRef<Sec[][]>([])
+  const future = useRef<Sec[][]>([])
+  const lastEdit = useRef<{ key: string | null; t: number }>({ key: null, t: 0 })
+  const [histSize, setHistSize] = useState({ past: 0, future: 0 })
+  const bumpHistory = useCallback(() => setHistSize({ past: past.current.length, future: future.current.length }), [])
 
-  const selected = sections.find(s => s.id === selectedId) || null
+  // sync machinery
+  const dirtyIds = useRef<Set<string>>(new Set())
+  const needsSync = useRef(false)
+  const syncTimer = useRef<any>(null)
+  const retryTimer = useRef<any>(null)
+  const syncing = useRef<Promise<boolean> | null>(null)
+  const syncRef = useRef<(() => Promise<boolean>) | null>(null)
+  const noticeTimer = useRef<any>(null)
+
+  // preview iframe
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const previewReady = useRef(false)
+  const refreshTimer = useRef<any>(null)
+
+  const visible = useMemo(() => sections.filter(s => !s.isDeleted), [sections])
+  const selected = visible.find(s => s.id === selectedId) || null
   const deviceMeta = DEVICES.find(d => d.id === device) || DEVICES[0]
 
-  useEffect(() => {
-    setHost(window.location.host)
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = prev }
+  const editorCtx = useMemo(() => ({
+    categories,
+    products,
+    links: [
+      { value: '/', label: 'Home' },
+      { value: '/products', label: 'All products' },
+      { value: '/products?sale=true', label: 'Sale' },
+      { value: '/products?new=true', label: 'New arrivals' },
+      { value: '/cart', label: 'Cart' },
+      { value: '/contact', label: 'Contact' },
+      { value: '/about', label: 'About' },
+      ...categories.map((c: any) => ({ value: `/categories/${c.slug}`, label: `Category: ${c.name}` })),
+      ...pages.map((p: any) => ({ value: `/pages/${p.slug}`, label: `Page: ${p.title}` })),
+      ...products.slice(0, 60).map((p: any) => ({ value: `/products/${p.slug}`, label: `Product: ${p.name}` }))
+    ]
+  }), [categories, products, pages])
+
+  // ------------------------------------------------------------
+  // Preview iframe plumbing
+  // ------------------------------------------------------------
+  const postToPreview = useCallback((message: Record<string, unknown>) => {
+    iframeRef.current?.contentWindow?.postMessage({ source: 'sf-editor', ...message }, window.location.origin)
   }, [])
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  )
+  const refreshPreview = useCallback(() => {
+    clearTimeout(refreshTimer.current)
+    refreshTimer.current = setTimeout(() => {
+      if (previewReady.current) postToPreview({ type: 'refresh' })
+      else setPreviewKey(k => k + 1)
+    }, 120)
+  }, [postToPreview])
 
-  const pushHistory = useCallback(() => {
-    historyRef.current.push(JSON.stringify(sections))
-    if (historyRef.current.length > 60) historyRef.current.shift()
-    futureRef.current = []
-    setHistCount(historyRef.current.length)
-    setFutureCount(0)
-  }, [sections])
+  // ------------------------------------------------------------
+  // Syncing drafts to the server
+  // ------------------------------------------------------------
+  const syncNow = useCallback((): Promise<boolean> => {
+    clearTimeout(syncTimer.current)
+    clearTimeout(retryTimer.current)
+    if (syncing.current) return syncing.current
 
-  const flushSections = useCallback(async (list: any[]) => {
-    await Promise.all(list.map((s, i) =>
-      fetch(`/api/admin/sections/${s.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: configOf(s), sortOrder: i })
-      }).catch(() => null)
-    ))
-  }, [])
-
-  const scheduleSave = useCallback((id: string, config: any) => {
-    setSaving(v => v + 1)
-    clearTimeout(timersRef.current[id])
-    timersRef.current[id] = setTimeout(async () => {
-      try {
-        await fetch(`/api/admin/sections/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ config })
-        })
-      } catch (e) {
-        console.error('Autosave failed', e)
-      } finally {
-        setSaving(v => Math.max(0, v - 1))
+    const run = async (): Promise<boolean> => {
+      while (needsSync.current) {
+        needsSync.current = false
+        const snapshot = sectionsRef.current
+        const sendConfig = new Set(dirtyIds.current)
+        dirtyIds.current = new Set()
+        setSaveState('saving')
+        try {
+          const r = await fetch('/api/admin/sections/state', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pageType, pageId,
+              items: snapshot.map(s => ({
+                id: s.id,
+                isVisible: s.isVisible,
+                isDeleted: !!s.isDeleted,
+                ...(sendConfig.has(s.id) ? { config: s.config } : {})
+              }))
+            })
+          })
+          if (!r.ok) {
+            const d = await r.json().catch(() => ({}))
+            throw new Error(d.error || `HTTP ${r.status}`)
+          }
+        } catch (e: any) {
+          // Put everything back and try again shortly — never silently drop an edit
+          sendConfig.forEach(id => dirtyIds.current.add(id))
+          needsSync.current = true
+          setSaveState('error')
+          retryTimer.current = setTimeout(() => { syncRef.current?.() }, 5000)
+          return false
+        }
       }
-    }, 650)
-  }, [])
-
-  const updateConfig = (id: string, config: any) => {
-    pushHistory()
-    setSections(prev => prev.map(s => s.id === id ? { ...s, config } : s))
-    scheduleSave(id, config)
-    setDirty(true)
-  }
-
-  const applySnapshot = (snapshot: string) => {
-    const next = JSON.parse(snapshot)
-    setSections(next)
-    setDirty(true)
-    flushSections(next)
-  }
-
-  const undo = () => {
-    if (!historyRef.current.length) return
-    futureRef.current.push(JSON.stringify(sections))
-    applySnapshot(historyRef.current.pop() as string)
-    setHistCount(historyRef.current.length)
-    setFutureCount(futureRef.current.length)
-  }
-
-  const redo = () => {
-    if (!futureRef.current.length) return
-    historyRef.current.push(JSON.stringify(sections))
-    applySnapshot(futureRef.current.pop() as string)
-    setHistCount(historyRef.current.length)
-    setFutureCount(futureRef.current.length)
-  }
-
-  useEffect(() => {
-    const h = (e) => {
-      const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) {
-        e.preventDefault()
-        if (e.shiftKey) redo(); else undo()
-      }
-      if (e.key === 'Escape') setSelectedId(null)
+      setSaveState('saved')
+      refreshPreview()
+      return true
     }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  })
 
-  const persistOrder = (ordered: any[]) => {
-    Promise.all(ordered.map((s, i) =>
-      fetch(`/api/admin/sections/${s.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sortOrder: i })
-      })
-    ))
+    const p = run().finally(() => { syncing.current = null })
+    syncing.current = p
+    return p
+  }, [pageType, pageId, refreshPreview])
+
+  useEffect(() => { syncRef.current = syncNow }, [syncNow])
+
+  const scheduleSync = useCallback((delay = 600) => {
+    needsSync.current = true
+    setSaveState('pending')
+    clearTimeout(syncTimer.current)
+    syncTimer.current = setTimeout(() => { syncNow() }, delay)
+  }, [syncNow])
+
+  // Every state change goes through here.
+  const commit = useCallback((
+    next: Sec[],
+    opts: { history?: boolean; key?: string; dirty?: string[]; all?: boolean; immediate?: boolean } = {}
+  ) => {
+    const { history = true, key, dirty: ids = [], all = false, immediate = false } = opts
+    if (history) {
+      const now = Date.now()
+      // Typing bursts in one section collapse into a single undo step
+      const coalesce = !!key && lastEdit.current.key === key && now - lastEdit.current.t < 1000
+      if (!coalesce) {
+        past.current.push(sectionsRef.current)
+        if (past.current.length > 80) past.current.shift()
+      }
+      lastEdit.current = { key: key || null, t: now }
+      future.current = []
+      bumpHistory()
+    }
+    sectionsRef.current = next
+    setSections(next)
+    if (all) next.forEach(s => dirtyIds.current.add(s.id))
+    ids.forEach(id => dirtyIds.current.add(id))
+    setDirty(true)
+    scheduleSync(immediate ? 0 : 600)
+  }, [scheduleSync])
+
+  const flash = useCallback((text: string, undo = false) => {
+    setNotice({ text, undo })
+    clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setNotice(null), 6000)
+  }, [])
+
+  // ------------------------------------------------------------
+  // Undo / redo
+  // ------------------------------------------------------------
+  const restore = useCallback((target: Sec[]) => {
+    // Sections that exist now but not in the snapshot (e.g. undoing an "add")
+    // are soft-deleted, so redo can bring them back with the same id.
+    const ids = new Set(target.map(s => s.id))
+    const orphans = sectionsRef.current.filter(s => !ids.has(s.id)).map(s => ({ ...s, isDeleted: true }))
+    const next = [...target, ...orphans]
+    sectionsRef.current = next
+    setSections(next)
+    next.forEach(s => dirtyIds.current.add(s.id))
+    lastEdit.current = { key: null, t: 0 }
+    setDirty(true)
+    scheduleSync(150)
+    if (selectedId && !next.find(s => s.id === selectedId && !s.isDeleted)) setSelectedId(null)
+    bumpHistory()
+  }, [scheduleSync, selectedId])
+
+  const undo = useCallback(() => {
+    const prev = past.current.pop()
+    if (!prev) return
+    future.current.push(sectionsRef.current)
+    restore(prev)
+  }, [restore])
+
+  const redo = useCallback(() => {
+    const next = future.current.pop()
+    if (!next) return
+    past.current.push(sectionsRef.current)
+    restore(next)
+  }, [restore])
+
+  // ------------------------------------------------------------
+  // Section operations
+  // ------------------------------------------------------------
+  const fullIndexFor = (visibleIndex: number) => {
+    const list = sectionsRef.current
+    const vis = list.filter(s => !s.isDeleted)
+    if (visibleIndex >= vis.length) return list.length
+    return list.indexOf(vis[Math.max(0, visibleIndex)])
   }
 
-  const addSection = async (type: string, index = sections.length) => {
+  const createSection = async (type: string, config: any, isVisible = true): Promise<Sec> => {
+    const r = await fetch('/api/admin/sections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pageType, pageId, sectionType: type, config, isVisible, sortOrder: 9999 })
+    })
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}))
+      throw new Error(d.error || 'Could not add section')
+    }
+    const d = await r.json()
+    return normalize({ ...d.section, config })
+  }
+
+  const defaultInsertIndex = () => {
+    if (insertIndex !== null) return Math.min(insertIndex, visible.length)
+    const at = visible.findIndex(s => s.id === selectedId)
+    return at >= 0 ? at + 1 : visible.length
+  }
+
+  const scrollPreviewTo = (id: string) => postToPreview({ type: 'scroll', id })
+
+  const addSection = async (type: string, atVisibleIndex = defaultInsertIndex()) => {
     setAddingType(type)
     try {
-      const r = await fetch('/api/admin/sections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pageType, pageId, sectionType: type,
-          config: defaultConfig(type), sortOrder: index, isVisible: true
-        })
-      })
-      if (!r.ok) throw new Error('Could not add section')
-      const d = await r.json()
-      const newSection = { ...d.section, config: configOf(d.section) }
-      setSections(prev => {
-        const next = [...prev.slice(0, index), newSection, ...prev.slice(index)]
-        return next.map((s, i) => ({ ...s, sortOrder: i }))
-      })
-      setSelectedId(newSection.id)
+      const created = await createSection(type, defaultConfig(type))
+      const next = [...sectionsRef.current]
+      next.splice(fullIndexFor(atVisibleIndex), 0, created)
+      commit(next, { immediate: true })
+      setSelectedId(created.id)
       setRightTab('content')
       setLeftTab('sections')
-      setDirty(true)
-      toast.success(`${metaFor(type)?.label || 'Section'} added`, 'Drag it to position — then publish')
+      setInsertIndex(null)
+      setTimeout(() => scrollPreviewTo(created.id), 900)
     } catch (e: any) {
       toast.error('Failed to add section', e.message)
     } finally {
@@ -217,107 +341,107 @@ export function PageBuilder({
 
   const applyTemplate = async (template: any) => {
     setShowTemplates(false)
-    const created: any[] = []
-    for (const type of template.sections) {
-      try {
-        const r = await fetch('/api/admin/sections', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pageType, pageId, sectionType: type, config: defaultConfig(type), sortOrder: 999, isVisible: true })
-        })
-        if (r.ok) {
-          const d = await r.json()
-          created.push({ ...d.section, config: configOf(d.section) })
-        }
-      } catch {}
+    const created: Sec[] = []
+    try {
+      for (const type of template.sections) created.push(await createSection(type, defaultConfig(type)))
+    } catch (e: any) {
+      toast.error('Template partly applied', e.message)
     }
     if (created.length) {
-      setSections(prev => [...prev, ...created].map((s, i) => ({ ...s, sortOrder: i })))
-      persistOrder([...sections, ...created])
-      setDirty(true)
+      const next = [...sectionsRef.current]
+      next.splice(fullIndexFor(defaultInsertIndex()), 0, ...created)
+      commit(next, { immediate: true })
       setSelectedId(created[0].id)
-      toast.success(`${template.name} applied`, `${created.length} sections added below`)
+      flash(`${template.name}: ${created.length} sections added`, true)
     }
   }
 
-  const toggleVisible = async (id: string) => {
-    const section = sections.find(s => s.id === id)
-    if (!section) return
-    const next = !section.isVisible
-    setSections(prev => prev.map(s => s.id === id ? { ...s, isVisible: next } : s))
-    setDirty(true)
-    try {
-      await fetch(`/api/admin/sections/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isVisible: next })
-      })
-    } catch { toast.error('Could not update visibility') }
+  const updateConfig = (id: string, config: any) => {
+    commit(
+      sectionsRef.current.map(s => s.id === id ? { ...s, config } : s),
+      { key: `cfg:${id}`, dirty: [id] }
+    )
+  }
+
+  const toggleVisible = (id: string) => {
+    commit(sectionsRef.current.map(s => s.id === id ? { ...s, isVisible: !s.isVisible } : s), { immediate: true })
   }
 
   const duplicateSection = async (id: string) => {
-    const idx = sections.findIndex(s => s.id === id)
-    if (idx < 0) return
+    const src = sectionsRef.current.find(s => s.id === id)
+    if (!src) return
     try {
-      const r = await fetch(`/api/admin/sections/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ duplicate: true })
-      })
-      if (!r.ok) throw new Error('Duplicate failed')
-      const d = await r.json()
-      const copy = { ...d.section, config: configOf(d.section) }
-      setSections(prev => {
-        const next = [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
-        const ordered = next.map((s, i) => ({ ...s, sortOrder: i }))
-        persistOrder(ordered)
-        return ordered
-      })
+      const copy = await createSection(src.sectionType, JSON.parse(JSON.stringify(src.config)), src.isVisible)
+      const next = [...sectionsRef.current]
+      next.splice(next.findIndex(s => s.id === id) + 1, 0, copy)
+      commit(next, { immediate: true })
       setSelectedId(copy.id)
-      setDirty(true)
-      toast.success('Section duplicated')
+      setTimeout(() => scrollPreviewTo(copy.id), 900)
     } catch (e: any) {
       toast.error('Could not duplicate', e.message)
     }
   }
 
   const moveSection = (id: string, dir: -1 | 1) => {
-    const idx = sections.findIndex(s => s.id === id)
-    const to = idx + dir
-    if (idx < 0 || to < 0 || to >= sections.length) return
-    pushHistory()
-    const next = arrayMove(sections, idx, to).map((s, i) => ({ ...s, sortOrder: i }))
-    setSections(next)
-    persistOrder(next)
-    setDirty(true)
+    const vis = sectionsRef.current.filter(s => !s.isDeleted)
+    const from = vis.findIndex(s => s.id === id)
+    const to = from + dir
+    if (from < 0 || to < 0 || to >= vis.length) return
+    reorderVisible(from, to)
+    setTimeout(() => scrollPreviewTo(id), 700)
   }
 
-  const removeSection = async (id: string) => {
-    if (!confirm('Remove this section? It disappears from the storefront when you publish.')) return
-    try {
-      const r = await fetch(`/api/admin/sections/${id}`, { method: 'DELETE' })
-      if (!r.ok) throw new Error('Delete failed')
-      setSections(prev => prev.filter(s => s.id !== id))
-      if (selectedId === id) setSelectedId(null)
-      setDirty(true)
-      toast.success('Section removed')
-    } catch (e: any) {
-      toast.error('Could not remove section', e.message)
+  const reorderVisible = (from: number, to: number) => {
+    const list = sectionsRef.current
+    const vis = list.filter(s => !s.isDeleted)
+    const moved = arrayMove(vis, from, to)
+    // keep soft-deleted rows at the end; they are order-agnostic
+    commit([...moved, ...list.filter(s => s.isDeleted)], { immediate: true })
+  }
+
+  const removeSection = (id: string) => {
+    const label = metaFor(sectionsRef.current.find(s => s.id === id)?.sectionType || '')?.label || 'Section'
+    commit(sectionsRef.current.map(s => s.id === id ? { ...s, isDeleted: true } : s), { immediate: true })
+    if (selectedId === id) setSelectedId(null)
+    flash(`${label} removed`, true)
+  }
+
+  const selectSection = (id: string | null, opts: { scroll?: boolean } = {}) => {
+    setSelectedId(id)
+    if (id) {
+      setShowRight(true)
+      if (opts.scroll) scrollPreviewTo(id)
     }
+  }
+
+  // ------------------------------------------------------------
+  // Publish / discard
+  // ------------------------------------------------------------
+  const resetHistory = () => {
+    past.current = []
+    future.current = []
+    lastEdit.current = { key: null, t: 0 }
+    bumpHistory()
   }
 
   const publishChanges = async () => {
     setPublishing(true)
     try {
-      await flushSections(sections)
+      const saved = await syncNow()
+      if (!saved) throw new Error('Your latest edits could not be saved. Check your connection and try again.')
       const r = await fetch('/api/admin/sections/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageType, pageId, action: 'publish' })
       })
-      if (!r.ok) throw new Error('Publish failed')
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Publish failed')
+      const cleaned = sectionsRef.current.filter(s => !s.isDeleted)
+      sectionsRef.current = cleaned
+      setSections(cleaned)
+      resetHistory()
       setDirty(false)
-      setPreviewKey(k => k + 1)
+      setSaveState('saved')
+      refreshPreview()
       toast.success('Published', 'Your storefront is updated')
       router.refresh()
     } catch (e: any) {
@@ -331,20 +455,29 @@ export function PageBuilder({
     if (!confirm('Discard all unpublished changes and restore the last published version?')) return
     setPublishing(true)
     try {
+      clearTimeout(syncTimer.current)
+      clearTimeout(retryTimer.current)
+      await syncing.current // let any in-flight save land first, then overwrite it
+      needsSync.current = false
+      dirtyIds.current = new Set()
       const r = await fetch('/api/admin/sections/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageType, pageId, action: 'discard' })
       })
-      if (!r.ok) throw new Error('Discard failed')
-      const params = new URLSearchParams({ pageType, includeDraft: 'false' })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Discard failed')
+      const params = new URLSearchParams({ pageType })
       if (pageId) params.set('pageId', pageId)
       const sr = await fetch(`/api/admin/sections?${params}`)
       const sd = await sr.json()
-      setSections(sd.sections.map((s: any) => ({ ...s, config: configOf(s) })))
+      const fresh = (sd.sections || []).map(normalize)
+      sectionsRef.current = fresh
+      setSections(fresh)
       setSelectedId(null)
+      resetHistory()
       setDirty(false)
-      setPreviewKey(k => k + 1)
+      setSaveState('idle')
+      refreshPreview()
       toast.success('Changes discarded')
     } catch (e: any) {
       toast.error('Discard failed', e.message)
@@ -353,57 +486,135 @@ export function PageBuilder({
     }
   }
 
-  const openPreview = async () => {
-    await flushSections(sections)
-    setMode('preview')
-    setSelectedId(null)
-    setPreviewKey(k => k + 1)
+  const leaveTo = async (href: string) => {
+    await syncNow()
+    router.push(href)
   }
 
-  const onDragEnd = ({ active, over }) => {
-    setActiveDragId(null)
+  // ------------------------------------------------------------
+  // Effects: keyboard, preview messages, unload guard, flush on unmount
+  // ------------------------------------------------------------
+  const handlers = useRef<any>({})
+  useEffect(() => { handlers.current = { undo, redo, syncNow, duplicateSection, removeSection, selectedId } })
+
+  useEffect(() => {
+    setHost(window.location.host)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const runShortcut = (key: string, shift: boolean, typing: boolean, e?: Event) => {
+      const h = handlers.current
+      const k = key.toLowerCase()
+      if (k === 'z' && !typing) { e?.preventDefault(); shift ? h.redo() : h.undo() }
+      else if (k === 'y' && !typing) { e?.preventDefault(); h.redo() }
+      else if (k === 's') { e?.preventDefault(); h.syncNow() }
+      else if (k === 'd' && !typing && h.selectedId) { e?.preventDefault(); h.duplicateSection(h.selectedId) }
+    }
+
+    const onKey = (e: KeyboardEvent) => {
+      const typing = isTyping(e.target)
+      if (e.ctrlKey || e.metaKey) { runShortcut(e.key, e.shiftKey, typing, e); return }
+      if (typing) return
+      if (e.key === 'Escape') setSelectedId(null)
+      if ((e.key === 'Delete' || e.key === 'Backspace') && handlers.current.selectedId) {
+        e.preventDefault()
+        handlers.current.removeSection(handlers.current.selectedId)
+      }
+    }
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.data?.source !== 'sf-preview') return
+      const m = e.data
+      if (m.type === 'ready') {
+        previewReady.current = true
+        setPreviewLoading(false)
+        postToPreview({ type: 'select', id: handlers.current.selectedId })
+      } else if (m.type === 'select') {
+        setSelectedId(m.id || null)
+        if (m.id) { setShowRight(true) }
+      } else if (m.type === 'shortcut') {
+        runShortcut(m.key, !!m.shift, false)
+      } else if (m.type === 'key') {
+        if (m.key === 'Escape') setSelectedId(null)
+      }
+    }
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (needsSync.current || syncing.current || dirtyIds.current.size) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    const onHide = () => { if (document.visibilityState === 'hidden' && needsSync.current) handlers.current.syncNow() }
+
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('message', onMessage)
+    window.addEventListener('beforeunload', onBeforeUnload)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('message', onMessage)
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      document.removeEventListener('visibilitychange', onHide)
+      document.body.style.overflow = prev
+      // Leaving the editor (e.g. via the sidebar): push whatever is pending
+      if (needsSync.current) handlers.current.syncNow()
+      clearTimeout(refreshTimer.current)
+      clearTimeout(noticeTimer.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // keep the iframe's selection outline in sync
+  useEffect(() => { if (previewReady.current) postToPreview({ type: 'select', id: selectedId }) }, [selectedId, postToPreview])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const onDragEnd = ({ active, over }: any) => {
     if (!over || active.id === over.id) return
-    const from = sections.findIndex(s => s.id === active.id)
-    const to = sections.findIndex(s => s.id === over.id)
+    const from = visible.findIndex(s => s.id === active.id)
+    const to = visible.findIndex(s => s.id === over.id)
     if (from < 0 || to < 0) return
-    pushHistory()
-    const next = arrayMove(sections, from, to).map((s, i) => ({ ...s, sortOrder: i }))
-    setSections(next)
-    persistOrder(next)
-    setDirty(true)
-  }
-
-  const onPaletteDrop = async (e) => {
-    e.preventDefault()
-    setPaletteOver(false)
-    const type = e.dataTransfer.getData('application/x-section-type') || e.dataTransfer.getData('text/plain')
-    if (type && metaFor(type)) await addSection(type, sections.length)
+    reorderVisible(from, to)
   }
 
   const paletteItems = useMemo(() => {
     const q = paletteSearch.trim().toLowerCase()
-    return SECTION_CATALOG.filter(t => !q || t.label.toLowerCase().includes(q) || t.description.toLowerCase().includes(q))
+    return SECTION_CATALOG.filter(t => !q || t.label.toLowerCase().includes(q) || t.description.toLowerCase().includes(q) || t.group.toLowerCase().includes(q))
   }, [paletteSearch])
 
   const pageValue = pageType === 'custom' && pageId ? `custom:${pageId}` : 'home'
   const switchPage = (value: string) => {
-    if (value === 'home') router.push('/admin/builder')
-    else {
-      const id = value.split(':')[1]
-      router.push(`/admin/builder?pageType=custom&pageId=${id}`)
-    }
+    if (value === 'home') leaveTo('/admin/builder')
+    else leaveTo(`/admin/builder?pageType=custom&pageId=${value.split(':')[1]}`)
   }
 
-  const previewSrc = `${publicPath}${publicPath.includes('?') ? '&' : '?'}preview=1&t=${previewKey}`
+  const previewSrc = `${publicPath}${publicPath.includes('?') ? '&' : '?'}preview=1`
+  const insertLabel = (() => {
+    if (insertIndex !== null) return insertIndex === 0 ? 'at the top' : insertIndex >= visible.length ? 'at the end' : `after “${metaFor(visible[insertIndex - 1]?.sectionType)?.label}”`
+    const at = visible.findIndex(s => s.id === selectedId)
+    return at >= 0 ? `after “${metaFor(visible[at].sectionType)?.label}”` : 'at the end'
+  })()
+
+  const canUndo = histSize.past > 0
+  const canRedo = histSize.future > 0
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-[#f1f1f1] admin-shell">
       {/* ===== Top bar ===== */}
       <header className="h-14 shrink-0 bg-[#1a1a1a] text-white flex items-center justify-between gap-3 px-3 md:px-4">
         <div className="flex items-center gap-2 min-w-0">
-          <Link href="/admin/themes" className="p-1.5 rounded-md hover:bg-white/10 text-white/70 hover:text-white" title="Close editor">
+          <a
+            href="/admin/themes"
+            onClick={(e) => { e.preventDefault(); leaveTo('/admin/themes') }}
+            className="p-1.5 rounded-md hover:bg-white/10 text-white/70 hover:text-white"
+            title="Close editor"
+          >
             <X className="h-4 w-4" />
-          </Link>
+          </a>
           <span className="hidden sm:block h-6 w-px bg-white/15" />
           <div className="relative min-w-0">
             <select
@@ -434,6 +645,7 @@ export function PageBuilder({
                 key={d.id}
                 onClick={() => setDevice(d.id)}
                 title={`${d.label} preview`}
+                aria-label={`${d.label} preview`}
                 className={cn('p-1.5 rounded-md transition-colors', device === d.id ? 'bg-white text-[#1a1a1a]' : 'text-white/70 hover:text-white')}
               >
                 <d.icon className="h-3.5 w-3.5" />
@@ -441,36 +653,41 @@ export function PageBuilder({
             ))}
           </div>
           <span className="hidden sm:block h-6 w-px bg-white/15 mx-0.5" />
-          <button onClick={undo} disabled={!histCount} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Undo (⌘Z)">
+          <button onClick={undo} disabled={!canUndo} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Undo (⌘Z)" aria-label="Undo">
             <Undo2 className="h-3.5 w-3.5" />
           </button>
-          <button onClick={redo} disabled={!futureCount} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Redo (⇧⌘Z)">
+          <button onClick={redo} disabled={!canRedo} className="p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30" title="Redo (⇧⌘Z)" aria-label="Redo">
             <Redo2 className="h-3.5 w-3.5" />
+          </button>
+          <span className="hidden lg:block h-6 w-px bg-white/15 mx-0.5" />
+          <button onClick={() => setShowLeft(v => !v)} className={cn('hidden lg:inline-flex p-1.5 rounded-md hover:bg-white/10', !showLeft && 'text-white/40')} title="Toggle sections panel" aria-label="Toggle sections panel">
+            <PanelLeft className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => setShowRight(v => !v)} className={cn('hidden lg:inline-flex p-1.5 rounded-md hover:bg-white/10', !showRight && 'text-white/40')} title="Toggle settings panel" aria-label="Toggle settings panel">
+            <PanelRight className="h-3.5 w-3.5" />
           </button>
         </div>
 
         <div className="flex items-center gap-1.5">
-          <span className="hidden md:flex items-center gap-1 text-[11px] text-white/60 mr-1">
-            {saving > 0 ? <><Save className="h-3 w-3 animate-pulse" /> Saving…</> : !dirty ? <><Check className="h-3 w-3 text-emerald-400" /> Saved</> : null}
-          </span>
+          <SaveBadge state={saveState} dirty={dirty} onRetry={() => syncNow()} />
           <button
             onClick={discardChanges}
             disabled={!dirty || publishing}
             className="hidden md:inline-flex p-1.5 rounded-md hover:bg-white/10 disabled:opacity-30"
             title="Discard unpublished changes"
+            aria-label="Discard unpublished changes"
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
-          <button
-            onClick={() => mode === 'preview' ? setMode('edit') : openPreview()}
-            className={cn(
-              'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[12px] font-medium border transition-colors',
-              mode === 'preview' ? 'bg-white text-[#1a1a1a] border-white' : 'border-white/25 hover:bg-white/10'
-            )}
+          <a
+            href={previewSrc}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden sm:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-white/25 text-[12px] hover:bg-white/10"
+            title="Open the draft in a new tab"
           >
-            <Eye className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{mode === 'preview' ? 'Exit preview' : 'Preview'}</span>
-          </button>
+            <Eye className="h-3.5 w-3.5" /> Preview
+          </a>
           <a
             href={publicPath}
             target="_blank"
@@ -484,402 +701,332 @@ export function PageBuilder({
             disabled={publishing || !dirty}
             className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-lg bg-white text-[#1a1a1a] text-[12px] font-semibold hover:bg-white/90 disabled:opacity-40"
           >
-            <Upload className="h-3.5 w-3.5" /> {publishing ? 'Publishing…' : 'Publish'}
+            {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} {publishing ? 'Publishing…' : 'Publish'}
           </button>
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
-        {/* ===== Left panel ===== */}
-        <aside data-builder-left className="w-full lg:w-[280px] shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-[#e3e3e3] flex flex-col lg:min-h-0">
-          <div className="flex items-center gap-1 px-2 pt-2">
-            <button
-              onClick={() => setLeftTab('sections')}
-              className={cn('flex-1 h-8 rounded-md text-[12px] font-medium transition-colors', leftTab === 'sections' ? 'bg-[#1a1a1a] text-white' : 'text-[#303030] hover:bg-[#f1f1f1]')}
-            >
-              Sections
-            </button>
-            <button
-              onClick={() => setLeftTab('add')}
-              className={cn('flex-1 h-8 rounded-md text-[12px] font-medium transition-colors', leftTab === 'add' ? 'bg-[#1a1a1a] text-white' : 'text-[#303030] hover:bg-[#f1f1f1]')}
-            >
-              Add
-            </button>
-          </div>
-
-          {leftTab === 'sections' ? (
-            <div className="flex-1 lg:min-h-0 flex flex-col">
-              <div className="px-3 py-2.5 border-b border-[#efefef]">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Page structure</p>
-                  <span className="text-[10px] text-[#8a8a8a]">{sections.length}</span>
-                </div>
-                <p className="text-[11px] text-[#8a8a8a] mt-0.5 truncate">{pageLabel}</p>
-              </div>
-
-              <div data-builder-tree className="flex-1 lg:overflow-y-auto p-2 space-y-0.5">
-                <GlobalRow label="Header" hint="Navigation & branding" />
-                {sections.length === 0 && (
-                  <div className="px-2 py-6 text-center">
-                    <LayoutIcon />
-                    <p className="text-[12px] font-medium text-[#1a1a1a] mt-2">Nothing here yet</p>
-                    <button onClick={() => setLeftTab('add')} className="text-[11px] text-[#005bd3] hover:underline mt-0.5">Add your first section</button>
-                  </div>
-                )}
-                {sections.map((section, idx) => {
-                  const meta = metaFor(section.sectionType)
-                  const Icon = meta?.icon || Layers
-                  const isSelected = selectedId === section.id
-                  return (
-                    <div
-                      key={section.id}
-                      data-section-id={section.id}
-                      data-section-type={section.sectionType}
-                      onClick={() => { setSelectedId(section.id); setRightTab('content'); setMode('edit') }}
-                      className={cn(
-                        'group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer border',
-                        isSelected ? 'bg-[#f0f6ff] border-[#b5d1ff]' : 'border-transparent hover:bg-[#f7f7f7]',
-                        !section.isVisible && 'opacity-55'
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5 text-[#616161] shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-medium text-[#1a1a1a] truncate leading-tight">{meta?.label || section.sectionType}</p>
-                        {subtitleFor(section) && (
-                          <p className="text-[10px] text-[#8a8a8a] truncate leading-tight mt-0.5">{subtitleFor(section)}</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleVisible(section.id) }}
-                        className="p-1 rounded text-[#8a8a8a] hover:text-[#1a1a1a] hover:bg-[#ececec] opacity-0 group-hover:opacity-100"
-                        title={section.isVisible ? 'Hide section' : 'Show section'}
-                        aria-label={section.isVisible ? 'Hide section' : 'Show section'}
-                      >
-                        {section.isVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                      </button>
-                    </div>
-                  )
-                })}
-                <GlobalRow label="Footer" hint="Navigation & branding" />
-              </div>
-
-              <div className="p-2 border-t border-[#efefef] space-y-1.5">
-                <button
-                  onClick={() => setLeftTab('add')}
-                  className="w-full flex items-center justify-center gap-1.5 h-8 rounded-lg border border-dashed border-[#c9c9c9] text-[12px] font-medium text-[#303030] hover:border-[#8a8a8a] hover:bg-[#fafafa]"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add section
-                </button>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary !h-7 !text-[11px]">
-                    <Sparkles className="h-3 w-3" /> Templates
-                  </button>
-                  <Link href="/admin/appearance" className="sf-btn sf-btn-secondary !h-7 !text-[11px]">
-                    <Settings2 className="h-3 w-3" /> Styles
-                  </Link>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 lg:min-h-0 flex flex-col">
-              <div className="p-2 border-b border-[#efefef]">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8a8a8a]" />
-                  <input
-                    value={paletteSearch}
-                    onChange={(e) => setPaletteSearch(e.target.value)}
-                    placeholder="Search blocks"
-                    className="sf-input pl-8"
-                    aria-label="Search blocks"
-                  />
-                </div>
-                <p className="text-[10px] text-[#8a8a8a] mt-1.5 flex items-center gap-1">
-                  <MousePointerClick className="h-3 w-3" /> Click to add, or drag onto the page
-                </p>
-              </div>
-              <div className="flex-1 lg:overflow-y-auto p-2 space-y-3">
-                {GROUPS.map(group => {
-                  const items = paletteItems.filter(t => t.group === group)
-                  if (!items.length) return null
-                  return (
-                    <div key={group}>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8a8a8a] px-1 mb-1">{group}</p>
-                      <div className="space-y-1">
-                        {items.map(t => (
-                          <button
-                            key={t.type}
-                            data-block-type={t.type}
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData('application/x-section-type', t.type)
-                              e.dataTransfer.setData('text/plain', t.type)
-                              e.dataTransfer.effectAllowed = 'copy'
-                            }}
-                            onDragEnd={() => setPaletteOver(false)}
-                            onClick={() => addSection(t.type)}
-                            disabled={addingType === t.type}
-                            className="w-full flex items-center gap-2.5 p-2 rounded-lg border border-[#e9e9e9] bg-white text-left hover:border-[#b5b5b5] hover:shadow-sm transition-all disabled:opacity-50 cursor-grab active:cursor-grabbing"
-                          >
-                            <span className="h-8 w-8 rounded-md bg-[#f4f4f4] flex items-center justify-center shrink-0">
-                              <t.icon className="h-4 w-4 text-[#303030]" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-[12px] font-medium text-[#1a1a1a] truncate">{t.label}</span>
-                              <span className="block text-[10px] text-[#8a8a8a] truncate">{t.description}</span>
-                            </span>
-                            {addingType === t.type ? (
-                              <RefreshCw className="h-3 w-3 animate-spin text-[#8a8a8a]" />
-                            ) : (
-                              <Plus className="h-3.5 w-3.5 text-[#8a8a8a] shrink-0" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })}
-                {paletteItems.length === 0 && (
-                  <p className="text-[12px] text-[#8a8a8a] text-center py-6">No blocks match “{paletteSearch}”.</p>
-                )}
-              </div>
-            </div>
-          )}
-        </aside>
-
-        {/* ===== Canvas ===== */}
-        <main data-builder-canvas-area className="flex-1 min-w-0 flex flex-col bg-[#e9e9e9]">
-          <div className="flex-1 min-h-0 overflow-auto p-3 md:p-6">
-            <div
-              className="mx-auto transition-[max-width] duration-300"
-              style={{ maxWidth: deviceMeta.width === '100%' ? '100%' : deviceMeta.width }}
-            >
-              {/* Browser chrome */}
-              <div className="flex items-center gap-2 h-9 px-3 rounded-t-xl bg-[#f7f7f7] border border-[#dcdcdc] border-b-0">
-                <div className="flex gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-                </div>
-                <div className="flex-1 flex items-center justify-center">
-                  <span className="inline-flex items-center gap-1.5 max-w-full px-3 h-6 rounded-md bg-white border border-[#e3e3e3] text-[11px] text-[#616161] truncate">
-                    <Lock className="h-2.5 w-2.5" />
-                    {host}{publicPath}
-                    {mode === 'preview' && <span className="text-[#8a8a8a]">{pageType === 'home' ? ' · draft preview' : ' · published'}</span>}
-                  </span>
-                </div>
-                <button onClick={() => setPreviewKey(k => k + 1)} className="p-1 rounded hover:bg-[#e9e9e9]" title="Reload preview" aria-label="Reload preview">
-                  <RefreshCw className="h-3 w-3 text-[#616161]" />
-                </button>
-              </div>
-
-              {mode === 'preview' ? (
-                <div className="bg-white border border-[#dcdcdc] rounded-b-xl overflow-hidden">
-                  <iframe
-                    key={previewKey}
-                    src={previewSrc}
-                    title="Storefront preview"
-                    className="w-full bg-white block"
-                    style={{ height: 'calc(100vh - 200px)', minHeight: 480 }}
-                  />
-                </div>
-              ) : (
-                <div
-                  data-builder-canvas
-                  className={cn(
-                    'bg-white border border-[#dcdcdc] rounded-b-xl overflow-hidden relative',
-                    paletteOver && 'ring-2 ring-[#005bd3]'
-                  )}
-                  onDragOver={(e) => {
-                    if (e.dataTransfer.types.includes('application/x-section-type')) {
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = 'copy'
-                      setPaletteOver(true)
-                    }
-                  }}
-                  onDragLeave={() => setPaletteOver(false)}
-                  onDrop={onPaletteDrop}
-                >
-                  {sections.length === 0 ? (
-                    <div className="px-8 py-20 text-center">
-                      <div className="h-12 w-12 rounded-xl bg-[#f1f1f1] flex items-center justify-center mx-auto mb-3">
-                        <Layers className="h-6 w-6 text-[#8a8a8a]" />
-                      </div>
-                      <h3 className="text-[15px] font-semibold text-[#1a1a1a]">Start building your page</h3>
-                      <p className="text-[12px] text-[#8a8a8a] mt-1 max-w-sm mx-auto">
-                        Drag a block in from the Add panel, or begin with a template.
-                      </p>
-                      <div className="flex items-center justify-center gap-2 mt-4">
-                        <button onClick={() => setLeftTab('add')} className="sf-btn sf-btn-primary"><Plus className="h-3.5 w-3.5" /> Add section</button>
-                        <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary"><Sparkles className="h-3.5 w-3.5" /> Use a template</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <DndContext
-                      sensors={sensors}
-                      collisionDetection={closestCenter}
-                      onDragStart={({ active }) => { setActiveDragId(active.id as string); setSelectedId(active.id as string) }}
-                      onDragEnd={onDragEnd}
-                      onDragCancel={() => setActiveDragId(null)}
-                    >
-                      <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
-                        {sections.map((section, idx) => (
-                          <SortableBlock
-                            key={section.id}
-                            id={section.id}
-                            index={idx}
-                            total={sections.length}
-                            selected={selectedId === section.id}
-                            hidden={!section.isVisible}
-                            type={section.sectionType}
-                            meta={metaFor(section.sectionType)}
-                            onSelect={() => { setSelectedId(section.id); setRightTab('content') }}
-                            onMove={moveSection}
-                            onDuplicate={duplicateSection}
-                            onToggleVisible={toggleVisible}
-                            onRemove={removeSection}
-                            dragging={activeDragId === section.id}
-                          >
-                            <SectionPreview section={section} categories={categories} mobile={device === 'mobile'} />
-                          </SortableBlock>
-                        ))}
-                      </SortableContext>
-                    </DndContext>
-                  )}
-
-                  {sections.length > 0 && (
-                    <div
-                      className={cn(
-                        'm-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 py-4 transition-colors',
-                        paletteOver ? 'border-[#005bd3] bg-[#f0f6ff] text-[#005bd3]' : 'border-[#e3e3e3] text-[#8a8a8a]'
-                      )}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span className="text-[12px] font-medium">
-                        {paletteOver ? 'Drop to add the block' : 'Drag a block here to add it'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <p className="text-[11px] text-[#8a8a8a] text-center mt-3">
-              {mode === 'preview'
-                ? pageType === 'home'
-                  ? 'Previewing the real storefront with your draft changes · only admins can see this'
-                  : 'Previewing the published page · publish your edits to see them here'
-                : 'Drag sections to reorder · click to edit · ⌘Z undo · changes autosave as drafts'}
-            </p>
-          </div>
-        </main>
-
-        {/* ===== Inspector ===== */}
-        <aside className="w-full lg:w-[340px] shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-[#e3e3e3] flex flex-col lg:min-h-0">
-          {selected ? (
-            <>
-              <div className="px-4 py-3 border-b border-[#e3e3e3] flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-wider text-[#8a8a8a]">Section</p>
-                  <h2 className="text-[14px] font-semibold text-[#1a1a1a] truncate">
-                    {metaFor(selected.sectionType)?.label || selected.sectionType}
-                  </h2>
-                </div>
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <IconBtn title="Move up" disabled={sections.findIndex(s => s.id === selected.id) === 0} onClick={() => moveSection(selected.id, -1)}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
-                  <IconBtn title="Move down" disabled={sections.findIndex(s => s.id === selected.id) === sections.length - 1} onClick={() => moveSection(selected.id, 1)}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
-                  <IconBtn title="Duplicate" onClick={() => duplicateSection(selected.id)}><Copy className="h-3.5 w-3.5" /></IconBtn>
-                  <IconBtn title={selected.isVisible ? 'Hide' : 'Show'} onClick={() => toggleVisible(selected.id)}>{selected.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</IconBtn>
-                  <IconBtn title="Remove" danger onClick={() => removeSection(selected.id)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
-                  <IconBtn title="Close" onClick={() => setSelectedId(null)}><X className="h-4 w-4" /></IconBtn>
-                </div>
-              </div>
-
-              <div className="flex border-b border-[#e3e3e3]">
-                {['content', 'design'].map(tab => (
+      <EditorContext.Provider value={editorCtx}>
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
+          {/* ===== Left panel ===== */}
+          {showLeft && (
+            <aside data-builder-left className="w-full lg:w-[280px] shrink-0 bg-white border-b lg:border-b-0 lg:border-r border-[#e3e3e3] flex flex-col lg:min-h-0">
+              <div className="flex items-center gap-1 px-2 pt-2">
+                {(['sections', 'add'] as const).map(tab => (
                   <button
                     key={tab}
-                    onClick={() => setRightTab(tab)}
-                    className={cn(
-                      'flex-1 h-9 text-[12px] font-medium capitalize border-b-2 -mb-px transition-colors',
-                      rightTab === tab ? 'border-[#1a1a1a] text-[#1a1a1a]' : 'border-transparent text-[#616161] hover:text-[#1a1a1a]'
-                    )}
+                    onClick={() => setLeftTab(tab)}
+                    className={cn('flex-1 h-8 rounded-md text-[12px] font-medium transition-colors capitalize', leftTab === tab ? 'bg-[#1a1a1a] text-white' : 'text-[#303030] hover:bg-[#f1f1f1]')}
                   >
-                    {tab}
+                    {tab === 'add' ? 'Add' : 'Sections'}
                   </button>
                 ))}
               </div>
 
-              <div className="flex-1 lg:overflow-y-auto p-4">
-                {rightTab === 'content' ? (
-                  <SectionConfigEditor
-                    section={selected}
-                    categories={categories}
-                    device={device === 'mobile' ? 'mobile' : 'desktop'}
-                    setDevice={(d) => setDevice(d)}
-                    onUpdate={(config) => updateConfig(selected.id, config)}
-                  />
-                ) : (
-                  <DesignEditor
-                    config={configOf(selected)}
-                    sectionType={selected.sectionType}
-                    onUpdate={(design) => updateConfig(selected.id, { ...configOf(selected), design })}
-                  />
-                )}
-              </div>
-
-              <div className="px-4 py-2.5 border-t border-[#e3e3e3]">
-                <p className="text-[11px] text-[#8a8a8a]">{saving > 0 ? 'Saving draft…' : 'Draft saved automatically'}{dirty ? ' · not published' : ''}</p>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 lg:overflow-y-auto">
-              <div className="px-4 py-3 border-b border-[#e3e3e3]">
-                <h2 className="text-[14px] font-semibold text-[#1a1a1a]">Page settings</h2>
-                <p className="text-[11px] text-[#8a8a8a] mt-0.5">{pageLabel}</p>
-              </div>
-              <div className="p-4 space-y-3">
-                <div className="rounded-lg border border-[#e3e3e3] p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[12px] font-medium text-[#1a1a1a]">{themeName}</p>
-                      <p className="text-[11px] text-[#8a8a8a]">Active theme</p>
+              {leftTab === 'sections' ? (
+                <div className="flex-1 lg:min-h-0 flex flex-col">
+                  <div className="px-3 py-2.5 border-b border-[#efefef]">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Page structure</p>
+                      <span className="text-[10px] text-[#8a8a8a]">{visible.length}</span>
                     </div>
-                    <Link href="/admin/themes" className="sf-btn sf-btn-secondary !h-7 !text-[11px]">Change</Link>
+                    <p className="text-[11px] text-[#8a8a8a] mt-0.5 truncate">{pageLabel}</p>
+                  </div>
+
+                  <div data-builder-tree className="flex-1 lg:overflow-y-auto p-2 space-y-0.5">
+                    <GlobalRow label="Header" />
+                    {visible.length === 0 && (
+                      <div className="px-2 py-6 text-center">
+                        <Layers className="h-5 w-5 text-[#b5b5b5] mx-auto" />
+                        <p className="text-[12px] font-medium text-[#1a1a1a] mt-2">Nothing here yet</p>
+                        <p className="text-[11px] text-[#8a8a8a] mt-0.5 px-2">The preview shows your default layout. Add a section to start customizing.</p>
+                        <button onClick={() => { setInsertIndex(0); setLeftTab('add') }} className="text-[11px] text-[#005bd3] hover:underline mt-1.5">Add your first section</button>
+                      </div>
+                    )}
+                    <DndContext id="builder-tree" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                      <SortableContext items={visible.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                        {visible.map((section, idx) => (
+                          <div key={section.id}>
+                            <InsertGap onClick={() => { setInsertIndex(idx); setLeftTab('add') }} />
+                            <TreeRow
+                              section={section}
+                              selected={selectedId === section.id}
+                              onSelect={() => selectSection(section.id, { scroll: true })}
+                              onToggle={() => toggleVisible(section.id)}
+                              onDuplicate={() => duplicateSection(section.id)}
+                              onRemove={() => removeSection(section.id)}
+                            />
+                          </div>
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                    {visible.length > 0 && <InsertGap onClick={() => { setInsertIndex(visible.length); setLeftTab('add') }} />}
+                    <GlobalRow label="Footer" />
+                  </div>
+
+                  <div className="p-2 border-t border-[#efefef] space-y-1.5">
+                    <button
+                      onClick={() => { setInsertIndex(null); setLeftTab('add') }}
+                      className="w-full flex items-center justify-center gap-1.5 h-8 rounded-lg border border-dashed border-[#c9c9c9] text-[12px] font-medium text-[#303030] hover:border-[#8a8a8a] hover:bg-[#fafafa]"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add section
+                    </button>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary !h-7 !text-[11px]">
+                        <Sparkles className="h-3 w-3" /> Templates
+                      </button>
+                      <Link href="/admin/appearance" className="sf-btn sf-btn-secondary !h-7 !text-[11px]">
+                        <Settings2 className="h-3 w-3" /> Styles
+                      </Link>
+                    </div>
                   </div>
                 </div>
-                <div className="rounded-lg border border-[#e3e3e3] p-3 space-y-2">
-                  <p className="text-[12px] font-medium text-[#1a1a1a]">{sections.length} sections</p>
-                  {sections.map((s, i) => (
-                    <button
-                      key={s.id}
-                      onClick={() => setSelectedId(s.id)}
-                      className="w-full flex items-center justify-between gap-2 text-left text-[11px] text-[#616161] hover:text-[#1a1a1a]"
-                    >
-                      <span className="truncate">{i + 1}. {metaFor(s.sectionType)?.label || s.sectionType}</span>
-                      <ChevronDown className="h-3 w-3 -rotate-90 shrink-0" />
-                    </button>
-                  ))}
+              ) : (
+                <div className="flex-1 lg:min-h-0 flex flex-col">
+                  <div className="p-2 border-b border-[#efefef]">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#8a8a8a]" />
+                      <input
+                        value={paletteSearch}
+                        onChange={(e) => setPaletteSearch(e.target.value)}
+                        placeholder="Search blocks"
+                        className="sf-input pl-8"
+                        aria-label="Search blocks"
+                        type="search"
+                        name="block-search"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#8a8a8a] mt-1.5 flex items-center gap-1">
+                      <MousePointerClick className="h-3 w-3 shrink-0" />
+                      <span className="truncate">Click to add {insertLabel}</span>
+                      {insertIndex !== null && (
+                        <button onClick={() => setInsertIndex(null)} className="ml-auto text-[#005bd3] hover:underline shrink-0">reset</button>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex-1 lg:overflow-y-auto p-2 space-y-3">
+                    {GROUPS.map(group => {
+                      const items = paletteItems.filter(t => t.group === group)
+                      if (!items.length) return null
+                      return (
+                        <div key={group}>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#8a8a8a] px-1 mb-1">{group}</p>
+                          <div className="space-y-1">
+                            {items.map(t => (
+                              <button
+                                key={t.type}
+                                data-block-type={t.type}
+                                onClick={() => addSection(t.type)}
+                                disabled={!!addingType}
+                                className="w-full flex items-center gap-2.5 p-2 rounded-lg border border-[#e9e9e9] bg-white text-left hover:border-[#b5b5b5] hover:shadow-sm transition-all disabled:opacity-50"
+                              >
+                                <span className="h-8 w-8 rounded-md bg-[#f4f4f4] flex items-center justify-center shrink-0">
+                                  <t.icon className="h-4 w-4 text-[#303030]" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-[12px] font-medium text-[#1a1a1a] truncate">{t.label}</span>
+                                  <span className="block text-[10px] text-[#8a8a8a] truncate">{t.description}</span>
+                                </span>
+                                {addingType === t.type
+                                  ? <RefreshCw className="h-3 w-3 animate-spin text-[#8a8a8a]" />
+                                  : <Plus className="h-3.5 w-3.5 text-[#8a8a8a] shrink-0" />}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {paletteItems.length === 0 && (
+                      <p className="text-[12px] text-[#8a8a8a] text-center py-6">No blocks match “{paletteSearch}”.</p>
+                    )}
+                  </div>
                 </div>
-                <div className="rounded-lg bg-[#f7f7f7] p-3">
-                  <p className="text-[11px] font-medium text-[#303030] flex items-center gap-1.5"><MousePointerClick className="h-3.5 w-3.5" /> Editing tips</p>
-                  <ul className="text-[11px] text-[#616161] mt-1.5 space-y-1 list-disc pl-4">
-                    <li>Click any section on the canvas to edit it.</li>
-                    <li>Drag the grip handle to reorder sections.</li>
-                    <li>Drag blocks from Add onto the page.</li>
-                    <li>Publish when you are ready to go live.</li>
-                  </ul>
-                </div>
-                <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary w-full">
-                  <Sparkles className="h-3.5 w-3.5" /> Browse templates
-                </button>
-                <Link href="/admin/appearance" className="sf-btn sf-btn-secondary w-full">
-                  <Settings2 className="h-3.5 w-3.5" /> Colors & typography
-                </Link>
-              </div>
-            </div>
+              )}
+            </aside>
           )}
-        </aside>
-      </div>
+
+          {/* ===== Canvas (the real storefront) ===== */}
+          <main data-builder-canvas-area className="flex-1 min-w-0 min-h-[70vh] lg:min-h-0 flex flex-col bg-[#e9e9e9] relative">
+            <div className="flex-1 min-h-0 flex flex-col p-3 md:p-5">
+              <div
+                className="mx-auto w-full flex-1 min-h-0 flex flex-col transition-[max-width] duration-300"
+                style={{ maxWidth: deviceMeta.width === '100%' ? '100%' : deviceMeta.width }}
+              >
+                <div className="flex items-center gap-2 h-9 px-3 rounded-t-xl bg-[#f7f7f7] border border-[#dcdcdc] border-b-0 shrink-0">
+                  <div className="flex gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+                  </div>
+                  <div className="flex-1 flex items-center justify-center min-w-0">
+                    <span className="inline-flex items-center gap-1.5 max-w-full px-3 h-6 rounded-md bg-white border border-[#e3e3e3] text-[11px] text-[#616161] truncate">
+                      <Lock className="h-2.5 w-2.5 shrink-0" />
+                      <span className="truncate">{host}{publicPath}</span>
+                      <span className="text-[#8a8a8a] shrink-0">· draft</span>
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => { previewReady.current = false; setPreviewLoading(true); setPreviewKey(k => k + 1) }}
+                    className="p-1 rounded hover:bg-[#e9e9e9]" title="Reload preview" aria-label="Reload preview"
+                  >
+                    <RefreshCw className="h-3 w-3 text-[#616161]" />
+                  </button>
+                </div>
+                <div className="relative flex-1 min-h-0 bg-white border border-[#dcdcdc] rounded-b-xl overflow-hidden">
+                  <iframe
+                    key={previewKey}
+                    ref={iframeRef}
+                    src={previewSrc}
+                    title="Storefront preview"
+                    className="absolute inset-0 w-full h-full bg-white block"
+                    onLoad={() => setPreviewLoading(false)}
+                  />
+                  {previewLoading && (
+                    <div className="absolute inset-0 bg-white/80 flex items-center justify-center pointer-events-none">
+                      <Loader2 className="h-5 w-5 animate-spin text-[#8a8a8a]" />
+                    </div>
+                  )}
+                  {visible.length === 0 && !previewLoading && (
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-[#1a1a1a] text-white text-[12px] rounded-lg px-3 py-2 shadow-lg flex items-center gap-2">
+                      Showing your default layout.
+                      <button onClick={() => setShowTemplates(true)} className="underline underline-offset-2">Start from a template</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="text-[11px] text-[#8a8a8a] text-center mt-2 shrink-0">
+                Click a section to edit it · drag rows in the left panel to reorder · ⌘Z undo · changes autosave as drafts until you publish
+              </p>
+            </div>
+
+            {notice && (
+              <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-10 bg-[#1a1a1a] text-white text-[12px] rounded-lg pl-3 pr-2 py-2 shadow-xl flex items-center gap-3">
+                <span>{notice.text}</span>
+                {notice.undo && (
+                  <button onClick={() => { undo(); setNotice(null) }} className="px-2 py-0.5 rounded bg-white/15 hover:bg-white/25 font-medium">Undo</button>
+                )}
+                <button onClick={() => setNotice(null)} aria-label="Dismiss" className="p-0.5 text-white/60 hover:text-white"><X className="h-3 w-3" /></button>
+              </div>
+            )}
+          </main>
+
+          {/* ===== Inspector ===== */}
+          {showRight && (
+            <aside className="w-full lg:w-[340px] shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-[#e3e3e3] flex flex-col lg:min-h-0">
+              {selected ? (
+                <>
+                  <div className="px-4 py-3 border-b border-[#e3e3e3] flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider text-[#8a8a8a]">Section</p>
+                      <h2 className="text-[14px] font-semibold text-[#1a1a1a] truncate">
+                        {metaFor(selected.sectionType)?.label || selected.sectionType}
+                      </h2>
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <IconBtn title="Move up" disabled={visible.findIndex(s => s.id === selected.id) === 0} onClick={() => moveSection(selected.id, -1)}><ArrowUp className="h-3.5 w-3.5" /></IconBtn>
+                      <IconBtn title="Move down" disabled={visible.findIndex(s => s.id === selected.id) === visible.length - 1} onClick={() => moveSection(selected.id, 1)}><ArrowDown className="h-3.5 w-3.5" /></IconBtn>
+                      <IconBtn title="Duplicate (⌘D)" onClick={() => duplicateSection(selected.id)}><Copy className="h-3.5 w-3.5" /></IconBtn>
+                      <IconBtn title={selected.isVisible ? 'Hide' : 'Show'} onClick={() => toggleVisible(selected.id)}>{selected.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}</IconBtn>
+                      <IconBtn title="Remove (Del)" danger onClick={() => removeSection(selected.id)}><Trash2 className="h-3.5 w-3.5" /></IconBtn>
+                      <IconBtn title="Close" onClick={() => setSelectedId(null)}><X className="h-4 w-4" /></IconBtn>
+                    </div>
+                  </div>
+
+                  <div className="flex border-b border-[#e3e3e3]">
+                    {['content', 'design'].map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => setRightTab(tab)}
+                        className={cn(
+                          'flex-1 h-9 text-[12px] font-medium capitalize border-b-2 -mb-px transition-colors',
+                          rightTab === tab ? 'border-[#1a1a1a] text-[#1a1a1a]' : 'border-transparent text-[#616161] hover:text-[#1a1a1a]'
+                        )}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex-1 lg:overflow-y-auto p-4">
+                    {rightTab === 'content' ? (
+                      <SectionConfigEditor
+                        key={selected.id}
+                        section={selected}
+                        device={device === 'mobile' ? 'mobile' : 'desktop'}
+                        setDevice={(d) => setDevice(d)}
+                        onUpdate={(config) => updateConfig(selected.id, config)}
+                      />
+                    ) : (
+                      <DesignEditor
+                        key={selected.id}
+                        config={selected.config}
+                        sectionType={selected.sectionType}
+                        onUpdate={(design) => updateConfig(selected.id, { ...selected.config, design })}
+                      />
+                    )}
+                  </div>
+
+                  <div className="px-4 py-2.5 border-t border-[#e3e3e3]">
+                    <p className="text-[11px] text-[#8a8a8a]">
+                      {saveState === 'saving' || saveState === 'pending' ? 'Saving draft…' : saveState === 'error' ? 'Could not save — retrying' : 'Draft saved automatically'}
+                      {dirty ? ' · not published' : ''}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 lg:overflow-y-auto">
+                  <div className="px-4 py-3 border-b border-[#e3e3e3]">
+                    <h2 className="text-[14px] font-semibold text-[#1a1a1a]">Page settings</h2>
+                    <p className="text-[11px] text-[#8a8a8a] mt-0.5">{pageLabel}</p>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="rounded-lg border border-[#e3e3e3] p-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-[12px] font-medium text-[#1a1a1a]">{themeName}</p>
+                          <p className="text-[11px] text-[#8a8a8a]">Active theme</p>
+                        </div>
+                        <Link href="/admin/themes" className="sf-btn sf-btn-secondary !h-7 !text-[11px]">Change</Link>
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-[#e3e3e3] p-3 space-y-1.5">
+                      <p className="text-[12px] font-medium text-[#1a1a1a]">{visible.length} section{visible.length === 1 ? '' : 's'}</p>
+                      {visible.map((s, i) => (
+                        <button
+                          key={s.id}
+                          onClick={() => selectSection(s.id, { scroll: true })}
+                          className="w-full flex items-center justify-between gap-2 text-left text-[11px] text-[#616161] hover:text-[#1a1a1a]"
+                        >
+                          <span className={cn('truncate', !s.isVisible && 'line-through opacity-60')}>{i + 1}. {metaFor(s.sectionType)?.label || s.sectionType}</span>
+                          <ChevronDown className="h-3 w-3 -rotate-90 shrink-0" />
+                        </button>
+                      ))}
+                      {visible.length === 0 && <p className="text-[11px] text-[#8a8a8a]">No sections yet.</p>}
+                    </div>
+                    <div className="rounded-lg bg-[#f7f7f7] p-3">
+                      <p className="text-[11px] font-medium text-[#303030] flex items-center gap-1.5"><MousePointerClick className="h-3.5 w-3.5" /> Shortcuts</p>
+                      <ul className="text-[11px] text-[#616161] mt-1.5 space-y-1 list-disc pl-4">
+                        <li>Click any section in the preview to edit it.</li>
+                        <li><kbd className="font-mono">⌘Z</kbd> / <kbd className="font-mono">⇧⌘Z</kbd> undo & redo — works for add, remove and reorder too.</li>
+                        <li><kbd className="font-mono">⌘D</kbd> duplicate · <kbd className="font-mono">Del</kbd> remove · <kbd className="font-mono">Esc</kbd> deselect.</li>
+                        <li>Hover between rows in the left panel to insert exactly where you want.</li>
+                        <li>Nothing goes live until you press Publish.</li>
+                      </ul>
+                    </div>
+                    <button onClick={() => setShowTemplates(true)} className="sf-btn sf-btn-secondary w-full">
+                      <Sparkles className="h-3.5 w-3.5" /> Browse templates
+                    </button>
+                    <Link href="/admin/appearance" className="sf-btn sf-btn-secondary w-full">
+                      <Settings2 className="h-3.5 w-3.5" /> Colors & typography
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </aside>
+          )}
+        </div>
+      </EditorContext.Provider>
 
       {/* Templates dialog */}
       {showTemplates && (
@@ -888,7 +1035,7 @@ export function PageBuilder({
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#e3e3e3]">
               <div>
                 <h2 className="text-[15px] font-semibold text-[#1a1a1a]">Starter templates</h2>
-                <p className="text-[11px] text-[#8a8a8a]">Sections are added below your current content.</p>
+                <p className="text-[11px] text-[#8a8a8a]">Sections are added {insertLabel}. You can undo it.</p>
               </div>
               <button onClick={() => setShowTemplates(false)} className="p-1.5 rounded-md hover:bg-[#f1f1f1]" aria-label="Close templates">
                 <X className="h-4 w-4" />
@@ -920,17 +1067,106 @@ export function PageBuilder({
   )
 }
 
-function LayoutIcon() {
-  return <Layers className="h-5 w-5 text-[#b5b5b5] mx-auto" />
+function SaveBadge({ state, dirty, onRetry }: { state: SaveState; dirty: boolean; onRetry: () => void }) {
+  if (state === 'error') {
+    return (
+      <button onClick={onRetry} className="hidden md:flex items-center gap-1 text-[11px] text-amber-300 hover:text-amber-200 mr-1" title="Saving failed — click to retry now">
+        <AlertTriangle className="h-3 w-3" /> Not saved · retry
+      </button>
+    )
+  }
+  return (
+    <span className="hidden md:flex items-center gap-1 text-[11px] text-white/60 mr-1">
+      {state === 'saving' || state === 'pending'
+        ? <><Save className="h-3 w-3 animate-pulse" /> Saving…</>
+        : <><Check className="h-3 w-3 text-emerald-400" /> {dirty ? 'Draft saved' : 'Published'}</>}
+    </span>
+  )
 }
 
-function GlobalRow({ label, hint }: { label: string; hint: string }) {
+function GlobalRow({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 rounded-md text-[#8a8a8a]" title={`${label} is global — edit it in ${hint}`}>
+    <Link
+      href="/admin/appearance"
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-[#8a8a8a] hover:bg-[#f7f7f7]"
+      title={`${label} is global — edit it under Store settings`}
+    >
       <Lock className="h-3 w-3 shrink-0" />
       <span className="text-[12px] flex-1">{label}</span>
       <span className="text-[9px] uppercase tracking-wide">Global</span>
+    </Link>
+  )
+}
+
+function InsertGap({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="group/gap relative block w-full h-1.5 -my-0.5 z-[1]"
+      title="Insert a section here"
+      aria-label="Insert a section here"
+    >
+      <span className="absolute inset-x-2 top-1/2 h-px bg-transparent group-hover/gap:bg-[#005bd3] transition-colors" />
+      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-[#005bd3] text-white items-center justify-center hidden group-hover/gap:flex">
+        <Plus className="h-2.5 w-2.5" />
+      </span>
+    </button>
+  )
+}
+
+function TreeRow({ section, selected, onSelect, onToggle, onDuplicate, onRemove }: any) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id })
+  const meta = metaFor(section.sectionType)
+  const Icon = meta?.icon || Layers
+  const sub = subtitleFor(section)
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : undefined, position: 'relative', zIndex: isDragging ? 10 : undefined }}
+      data-section-id={section.id}
+      data-section-type={section.sectionType}
+      onClick={onSelect}
+      className={cn(
+        'group flex items-center gap-1.5 pl-1 pr-1.5 py-1.5 rounded-md cursor-pointer border bg-white',
+        selected ? 'bg-[#f0f6ff] border-[#b5d1ff]' : 'border-transparent hover:bg-[#f7f7f7]',
+        !section.isVisible && 'opacity-55'
+      )}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+        className="p-0.5 text-[#b5b5b5] hover:text-[#616161] cursor-grab active:cursor-grabbing touch-none"
+        title="Drag to reorder"
+        aria-label={`Reorder ${meta?.label || section.sectionType}`}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <Icon className="h-3.5 w-3.5 text-[#616161] shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-medium text-[#1a1a1a] truncate leading-tight">{meta?.label || section.sectionType}</p>
+        {sub && <p className="text-[10px] text-[#8a8a8a] truncate leading-tight mt-0.5">{sub}</p>}
+      </div>
+      <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
+        <RowBtn title={section.isVisible ? 'Hide section' : 'Show section'} onClick={onToggle}>{section.isVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}</RowBtn>
+        <RowBtn title="Duplicate" onClick={onDuplicate}><Copy className="h-3 w-3" /></RowBtn>
+        <RowBtn title="Remove" onClick={onRemove} danger><Trash2 className="h-3 w-3" /></RowBtn>
+      </div>
+      {!section.isVisible && <EyeOff className="h-3 w-3 text-[#8a8a8a] shrink-0 group-hover:hidden" />}
     </div>
+  )
+}
+
+function RowBtn({ title, onClick, danger, children }: any) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={cn('p-1 rounded text-[#8a8a8a] hover:bg-[#ececec] hover:text-[#1a1a1a]', danger && 'hover:bg-rose-50 hover:text-rose-600')}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -945,86 +1181,6 @@ function IconBtn({ title, onClick, disabled, danger, children }: any) {
         'p-1.5 rounded-md text-[#616161] hover:bg-[#f1f1f1] hover:text-[#1a1a1a] disabled:opacity-30',
         danger && 'hover:bg-rose-50 hover:text-rose-600'
       )}
-    >
-      {children}
-    </button>
-  )
-}
-
-function SortableBlock({ id, index, total, selected, hidden, type, meta, onSelect, onMove, onDuplicate, onToggleVisible, onRemove, dragging, children }: any) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const Icon = meta?.icon || Layers
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: dragging || isDragging ? 0.45 : 1,
-    zIndex: isDragging ? 30 : undefined,
-    position: 'relative' as const
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      data-section-id={id}
-      data-section-type={type}
-      onClick={onSelect}
-      className={cn(
-        'group/sec relative transition-shadow',
-        selected ? 'ring-2 ring-inset ring-[#005bd3] z-[1]' : 'hover:ring-1 hover:ring-inset hover:ring-[#005bd3]/40',
-        hidden && 'opacity-55'
-      )}
-    >
-      {/* Section label chip */}
-      <div
-        className={cn(
-          'absolute top-0 left-0 z-20 flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-br-md text-[10px] font-medium shadow-sm transition-opacity',
-          selected ? 'bg-[#005bd3] text-white' : 'bg-[#e7f0ff] text-[#0b4a9e] opacity-0 group-hover/sec:opacity-100'
-        )}
-      >
-        <button
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          className="p-0.5 cursor-grab active:cursor-grabbing rounded hover:bg-white/20"
-          title="Drag to reorder"
-          aria-label={`Reorder ${meta?.label || type}`}
-        >
-          <GripVertical className="h-3 w-3" />
-        </button>
-        <Icon className="h-3 w-3" />
-        <span className="max-w-[140px] truncate">{meta?.label || type}</span>
-        {hidden && <span className="opacity-80">· hidden</span>}
-      </div>
-
-      {/* Quick actions */}
-      <div
-        className={cn(
-          'absolute top-1.5 right-1.5 z-20 flex items-center gap-0.5 bg-[#1a1a1a]/95 text-white rounded-lg shadow-lg px-0.5 py-0.5 transition-opacity',
-          selected ? 'opacity-100' : 'opacity-0 group-hover/sec:opacity-100'
-        )}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <ChipBtn title="Move up" disabled={index === 0} onClick={() => onMove(id, -1)}><ArrowUp className="h-3 w-3" /></ChipBtn>
-        <ChipBtn title="Move down" disabled={index === total - 1} onClick={() => onMove(id, 1)}><ArrowDown className="h-3 w-3" /></ChipBtn>
-        <ChipBtn title="Duplicate" onClick={() => onDuplicate(id)}><Copy className="h-3 w-3" /></ChipBtn>
-        <ChipBtn title={hidden ? 'Show' : 'Hide'} onClick={() => onToggleVisible(id)}>{hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}</ChipBtn>
-        <ChipBtn title="Remove" danger onClick={() => onRemove(id)}><Trash2 className="h-3 w-3" /></ChipBtn>
-      </div>
-
-      {children}
-    </div>
-  )
-}
-
-function ChipBtn({ title, onClick, disabled, danger, children }: any) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      className={cn('p-1 rounded-md disabled:opacity-30', danger ? 'hover:bg-rose-500' : 'hover:bg-white/15')}
     >
       {children}
     </button>

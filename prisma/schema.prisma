@@ -572,6 +572,22 @@ model Plugin {
   @@map("plugins")
 }
 
+// ============ API KEYS (MCP server / automation) ============
+// Only the SHA-256 hash of a key is stored; the raw key is shown once.
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  name       String
+  prefix     String    // first chars, shown in the admin list to identify a key
+  keyHash    String    @unique
+  scope      String    @default("read") // read | write
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("api_keys")
+}
+
 // ============ MYSTERY CRATE PLUGIN ============
 // A mystery crate is a product that, when purchased, includes random items
 // from a configured pool with specified probabilities.
@@ -620,6 +636,7 @@ model PageSection {
   sortOrder   Int      @default(0)
   draftSortOrder Int?  // null = no draft change
   isVisible   Boolean  @default(true)
+  draftIsVisible Boolean? // null = no draft change (visibility is staged like everything else)
   isDraft     Boolean  @default(false) // true = newly added in draft, not yet published
   isDeleted   Boolean  @default(false) // true = marked for deletion in draft
   createdAt   DateTime @default(now())

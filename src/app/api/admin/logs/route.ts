@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
-import { db } from '@/lib/db'
+import { db, like } from '@/lib/db'
 
 function parseIntSafe(v, dflt) {
   const n = parseInt(v, 10)
@@ -25,8 +25,8 @@ export async function GET(req) {
       if (status && ['sent', 'failed'].includes(status)) where.status = status
       if (q) {
         where.OR = [
-          { to: { contains: q } },
-          { subject: { contains: q } }
+          { to: like(q) },
+          { subject: like(q) }
         ]
       }
       const [total, rows] = await Promise.all([
@@ -48,9 +48,9 @@ export async function GET(req) {
     const where = {}
     if (q) {
       where.OR = [
-        { action: { contains: q } },
-        { actorEmail: { contains: q } },
-        { entity: { contains: q } }
+        { action: like(q) },
+        { actorEmail: like(q) },
+        { entity: like(q) }
       ]
     }
     const [total, rows] = await Promise.all([

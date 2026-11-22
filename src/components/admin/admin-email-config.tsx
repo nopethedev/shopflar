@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SecretInput } from '@/components/ui/secret-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -133,11 +134,11 @@ export function AdminEmailConfig({ settings, welcome, configured }) {
             </div>
             <div>
               <Label className="text-xs">Username</Label>
-              <Input value={smtp.smtp_user} onChange={(e) => setSmtpField('smtp_user', e.target.value)} placeholder="you@example.com" />
+              <Input autoComplete="off" name="smtp-account" value={smtp.smtp_user} onChange={(e) => setSmtpField('smtp_user', e.target.value)} placeholder="you@example.com" />
             </div>
             <div>
               <Label className="text-xs">Password</Label>
-              <Input type="password" value={smtp.smtp_pass} onChange={(e) => setSmtpField('smtp_pass', e.target.value)} placeholder="••••••••" />
+              <SecretInput value={smtp.smtp_pass} onChange={(e) => setSmtpField('smtp_pass', e.target.value)} placeholder="••••••••" />
             </div>
             <div>
               <Label className="text-xs">From Email</Label>

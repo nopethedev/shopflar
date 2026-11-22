@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, like } from '@/lib/db'
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url)
@@ -14,10 +14,10 @@ export async function GET(req) {
     where: {
       status: 'PUBLISHED',
       OR: [
-        { name: { contains: q } },
-        { shortDescription: { contains: q } },
-        { sku: { contains: q } },
-        { tags: { some: { tag: { contains: q } } } }
+        { name: like(q) },
+        { shortDescription: like(q) },
+        { sku: like(q) },
+        { tags: { some: { tag: like(q) } } }
       ]
     },
     select: {

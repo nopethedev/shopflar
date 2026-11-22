@@ -1,55 +1,40 @@
 import { db } from '@/lib/db'
 import { PageBuilder } from '@/components/admin/page-builder'
 import { getTheme } from '@/lib/themes'
+import { pageWhere, withDraft, hasUnpublishedChanges } from '@/lib/page-sections'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminBuilderPage({ searchParams }) {
   const sp = await searchParams
-  const pageType = sp.pageType || 'home'
-  const pageId = sp.pageId || null
+  const pageType = sp.pageType === 'custom' ? 'custom' : 'home'
+  const pageId = pageType === 'custom' ? sp.pageId || null : null
 
-  const [sections, categories, customPages, activeThemeRow] = await Promise.all([
-    db.pageSection.findMany({
-      where: { pageType, ...(pageId ? { pageId } : {}) }
-    }),
-    db.category.findMany({ where: { isVisible: true }, orderBy: { sortOrder: 'asc' } }),
+  const [rows, categories, customPages, products, activeThemeRow] = await Promise.all([
+    db.pageSection.findMany({ where: pageWhere(pageType, pageId) }),
+    db.category.findMany({ where: { isVisible: true }, orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, slug: true } }),
     db.customPage.findMany({ select: { id: true, title: true, slug: true, status: true }, orderBy: { title: 'asc' } }),
+    db.product.findMany({ where: { status: 'PUBLISHED' }, select: { id: true, name: true, slug: true }, orderBy: { name: 'asc' }, take: 200 }),
     db.storeSetting.findUnique({ where: { key: 'active_theme' } })
   ])
-  // Draft order wins over the published order so a drag survives a reload.
-  sections.sort((a, b) => (a.draftSortOrder ?? a.sortOrder) - (b.draftSortOrder ?? b.sortOrder))
+
+  // Editor shows the staged state; soft-deleted rows stay hidden (they are
+  // only waiting for the next publish to be removed for good).
+  const sections = rows.filter(r => !r.isDeleted).map(withDraft).sort((a, b) => a.sortOrder - b.sortOrder)
   const themeName = getTheme(activeThemeRow?.value || 'dawn')?.name || 'Dawn'
 
-  // Parse section configs — prefer draftConfig if it exists (editor shows draft)
-  const parsedSections = sections.map(s => ({
-    ...s,
-    config: (() => {
-      try {
-        return JSON.parse(s.draftConfig || s.config)
-      } catch {
-        return {}
-      }
-    })()
-  }))
-
-  const currentPage = pageType === 'custom' && pageId
-    ? customPages.find(p => p.id === pageId)
-    : null
-
-  const initialDirty = sections.some(s => !!s.draftConfig || s.isDraft || s.isDeleted)
-  const pageLabel = pageType === 'home'
-    ? 'Home page'
-    : currentPage?.title || 'Custom page'
-  const publicPath = pageType === 'custom' && currentPage
-    ? `/pages/${currentPage.slug}`
-    : '/'
+  const currentPage = pageType === 'custom' && pageId ? customPages.find(p => p.id === pageId) : null
+  const pageLabel = pageType === 'home' ? 'Home page' : currentPage?.title || 'Custom page'
+  const publicPath = pageType === 'custom' && currentPage ? `/pages/${currentPage.slug}` : '/'
 
   return (
     <PageBuilder
-      initialSections={parsedSections}
-      initialDirty={initialDirty}
+      // A fresh editor per page — never carry state across page switches
+      key={`${pageType}:${pageId || 'home'}`}
+      initialSections={sections}
+      initialDirty={hasUnpublishedChanges(rows)}
       categories={categories}
+      products={products}
       pages={customPages}
       pageType={pageType}
       pageId={pageId}

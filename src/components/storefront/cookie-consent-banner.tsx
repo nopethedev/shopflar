@@ -11,6 +11,8 @@ export function CookieConsentBanner() {
   const [showDetails, setShowDetails] = useState(false)
 
   useEffect(() => {
+    // Never show inside the theme editor's preview frame
+    if (window.parent !== window && new URLSearchParams(window.location.search).get('preview') === '1') return
     const stored = localStorage.getItem(STORAGE_KEY)
     if (!stored) {
       // Small delay so banner doesn't flash on page load
@@ -22,6 +24,7 @@ export function CookieConsentBanner() {
   const save = (consent) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ consent, ts: Date.now() }))
     setVisible(false)
+    window.dispatchEvent(new Event('shopflar:consent'))
     // Optional: send to server for record-keeping
     fetch('/api/cookie-consent', {
       method: 'POST',

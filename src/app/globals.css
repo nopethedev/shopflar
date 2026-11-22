@@ -139,6 +139,7 @@
 
 /* ===== Page builder: section design shell ===== */
 .sec-wrap {
+  position: relative;
   padding-top: var(--sec-pt, 0px);
   padding-bottom: var(--sec-pb, 0px);
 }
@@ -151,6 +152,15 @@
     padding-bottom: calc(var(--sec-pb, 0px) * 0.6);
   }
 }
+
+/* Per-section design extras */
+@media (max-width: 767px) { .sf-hide-mobile { display: none !important; } }
+@media (min-width: 768px) { .sf-hide-desktop { display: none !important; } }
+.sf-border-top { border-top: 1px solid var(--border); }
+.sf-border-bottom { border-bottom: 1px solid var(--border); }
+@keyframes sf-fade-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+.sf-reveal { animation: sf-fade-up .7s cubic-bezier(.2,.7,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .sf-reveal { animation: none; } }
 
 /* Hero / slideshow height + title scale (desktop & mobile overrides) */
 .sec-hero {

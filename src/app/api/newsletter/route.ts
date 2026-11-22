@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendNewsletterWelcome } from '@/lib/email'
 import { generateOrderNumber } from '@/lib/settings'
+import { syncSubscriberToMailchimp } from '@/lib/mailchimp'
 
 export async function POST(req) {
   try {
@@ -23,6 +24,9 @@ export async function POST(req) {
         source: source || 'STOREFRONT'
       }
     })
+
+    // Mirror to Mailchimp when that app is enabled (never blocks the signup)
+    await syncSubscriberToMailchimp(cleanEmail, name)
 
     // Check if welcome email with discount is enabled
     const welcomeEnabled = await getSetting('newsletter_welcome_enabled')

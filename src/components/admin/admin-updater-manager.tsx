@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { SecretInput } from '@/components/ui/secret-input'
 import { toast } from '@/lib/toast'
 import {
   UploadCloud, RefreshCw, CheckCircle2, XCircle, Loader2, Clock,
@@ -355,10 +356,9 @@ export function AdminUpdaterManager({ version, lastUpdate, initialState, initial
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Access token {hasToken ? <span className="text-emerald-600 normal-case">(saved ✓)</span> : <span className="normal-case">(optional — needed for private repos)</span>}
                 </label>
-                <Input
+                <SecretInput
                   value={ghToken}
                   onChange={(e) => setGhToken(e.target.value)}
-                  type="password"
                   placeholder={hasToken ? '•••••••••••• (leave empty to keep)' : 'github_pat_…'}
                   className="mt-1.5 font-mono text-xs"
                 />

@@ -6,18 +6,22 @@ import { db } from '@/lib/db'
 import { ProductCard } from './product-card'
 import { NewsletterForm } from './newsletter-form'
 import { ContactForm } from './contact-form'
-import { SlideshowSection, CountdownSection } from './section-client'
+import { SlideshowSection, CountdownSection, CopyCodeButton } from './section-client'
 import { scopeSectionCss } from '@/lib/section-css'
 import { contentPositionClasses, overlayStyleFor } from '@/lib/section-style'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { ArrowRight, Star, ChevronDown, ShieldCheck, Truck, RotateCcw } from 'lucide-react'
+import {
+  ArrowRight, Star, ChevronDown, ShieldCheck, Truck, RotateCcw, Heart, Sparkles, Gift, Clock, Leaf,
+  Award, Headphones, CreditCard, Instagram, Facebook, Youtube, Linkedin, Github, Twitch, Mail, Globe,
+  MessageCircle, Music2, Twitter
+} from 'lucide-react'
 
 // Re-exported for the builder preview
 export { contentPositionClasses, overlayStyleFor }
 
 // Padding presets (px) — mirrored by the builder preview
-export const PADDING_Y = { none: 0, sm: 24, md: 56, lg: 80, xl: 120 }
+export const PADDING_Y = { none: 0, xs: 12, sm: 24, md: 56, lg: 80, xl: 120 }
 
 // Full-bleed sections that must NOT get the default vertical padding
 const PADDING_DEFAULTS = {
@@ -25,7 +29,8 @@ const PADDING_DEFAULTS = {
   slideshow: 'none',
   'announcement-bar': 'none',
   marquee: 'none',
-  newsletter: 'lg'
+  newsletter: 'lg',
+  spacer: 'none'
 }
 
 // 9-way content position (Shopify-style "Position: Bottom center") with
@@ -35,36 +40,81 @@ const PADDING_DEFAULTS = {
 // Overlay style from the opacity slider (0-90). Falls back to the classic
 // gradient when the slider was never used.
 
-export async function SectionRenderer({ section }) {
-  if (!section.isVisible) return null
+// In the editor preview, hidden sections still render (dimmed) so they can be
+// selected and re-shown; on the public storefront they are skipped entirely.
+export async function SectionRenderer({ section, preview = false, label = '' }) {
+  if (!section.isVisible && !preview) return null
   let config = section.config
   if (typeof config === 'string') {
     try { config = JSON.parse(config) } catch { config = {} }
   }
   const design = { paddingY: PADDING_DEFAULTS[section.sectionType], ...(config.design || {}) }
-  const body = await renderBody(section.sectionType, config)
-  if (!body) return null
+  let body = await renderBody(section.sectionType, config)
+  if (!body) {
+    if (!preview) return null
+    // Keep empty sections selectable in the editor (e.g. an image with no
+    // file yet, or a product grid whose filter matches nothing)
+    body = (
+      <div className="container-ecom">
+        <div className="rounded-lg border-2 border-dashed border-border py-10 text-center text-sm text-muted-foreground">
+          {label || section.sectionType} has nothing to show yet — add content in the editor.
+        </div>
+      </div>
+    )
+  }
   return (
-    <SectionShell design={design} secId={section.id} customCss={config.design?.customCss || config.customCss}>
+    <SectionShell
+      design={design}
+      secId={section.id}
+      customCss={config.design?.customCss || config.customCss}
+      editor={preview ? { label: label || section.sectionType, hidden: !section.isVisible } : null}
+    >
       {body}
     </SectionShell>
   )
 }
 
-// Universal design wrapper — background, text color, spacing, width, custom CSS
-export function SectionShell({ design, secId, customCss, children }) {
+// Universal design wrapper — background (colour or image), text colour,
+// spacing, width, alignment, visibility per device, scroll animation,
+// anchor id and custom CSS. Every section type gets these for free.
+export function SectionShell({ design, secId, customCss, children, editor = null }) {
+  const padTop = design.paddingTop !== undefined && design.paddingTop !== '' ? Number(design.paddingTop) : undefined
+  const padBottom = design.paddingBottom !== undefined && design.paddingBottom !== '' ? Number(design.paddingBottom) : undefined
+  const preset = PADDING_Y[design.paddingY] ?? 56
   const style = {
     ...(design.bg ? { backgroundColor: design.bg } : {}),
     ...(design.textColor ? { color: design.textColor } : {}),
-    '--sec-pt': `${PADDING_Y[design.paddingY] ?? 56}px`,
-    '--sec-pb': `${PADDING_Y[design.paddingY] ?? 56}px`,
+    ...(design.align ? { textAlign: design.align } : {}),
+    ...(design.bgImage ? { backgroundImage: `url("${String(design.bgImage).replace(/["\\)]/g, '')}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}),
+    '--sec-pt': `${Number.isFinite(padTop) ? padTop : preset}px`,
+    '--sec-pb': `${Number.isFinite(padBottom) ? padBottom : preset}px`,
     ...(design.maxWidth ? { '--sec-max': design.maxWidth === 'wide' ? '96rem' : design.maxWidth === 'narrow' ? '56rem' : design.maxWidth === 'full' ? '100%' : '80rem' } : {})
   }
+  const classes = [
+    'sec-wrap',
+    design.hideOn === 'mobile' ? 'sf-hide-mobile' : '',
+    design.hideOn === 'desktop' ? 'sf-hide-desktop' : '',
+    design.animation === 'fade-up' ? 'sf-reveal' : '',
+    design.borderTop ? 'sf-border-top' : '',
+    design.borderBottom ? 'sf-border-bottom' : ''
+  ].filter(Boolean).join(' ')
+  const anchor = design.anchorId ? String(design.anchorId).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 60) : undefined
   const scopedCss = customCss && secId ? scopeSectionCss(customCss, `[data-sec="${secId}"]`) : ''
+  const overlayOpacity = design.bgImage ? Math.min(90, Math.max(0, parseInt(design.bgOverlay) || 0)) : 0
   return (
-    <section className="sec-wrap" style={style} data-sec={secId || undefined}>
+    <section
+      id={anchor}
+      className={classes}
+      style={style}
+      data-sec={secId || undefined}
+      data-sec-label={editor?.label || undefined}
+      data-sec-hidden={editor?.hidden ? 'true' : undefined}
+    >
       {scopedCss && <style dangerouslySetInnerHTML={{ __html: scopedCss }} />}
-      {children}
+      {overlayOpacity > 0 && (
+        <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: `rgba(0,0,0,${overlayOpacity / 100})` }} />
+      )}
+      {overlayOpacity > 0 ? <div className="relative">{children}</div> : children}
     </section>
   )
 }
@@ -92,6 +142,14 @@ async function renderBody(type, config) {
     case 'countdown': return <CountdownSection config={config} />
     case 'logo-cloud': return <LogoCloudSection config={config} />
     case 'contact': return <ContactSection config={config} />
+    case 'features': return <FeaturesSection config={config} />
+    case 'spacer': return <SpacerSection config={config} />
+    case 'collection-list': return <CollectionListSection config={config} />
+    case 'featured-product': return <FeaturedProductSection config={config} />
+    case 'promo-tiles': return <PromoTilesSection config={config} />
+    case 'gallery': return <GallerySection config={config} />
+    case 'quote': return <QuoteSection config={config} />
+    case 'social-links': return <SocialLinksSection config={config} />
     default: return null
   }
 }
@@ -290,10 +348,7 @@ async function DiscountsSection({ config }) {
                   {d.minOrderAmount ? ` · min $${d.minOrderAmount}` : ''}
                 </p>
               </div>
-              <button
-                onClick={() => navigator.clipboard.writeText(d.code)}
-                className="px-3 py-1.5 rounded-md bg-foreground text-background text-xs font-medium hover:bg-foreground/90"
-              >Copy</button>
+              <CopyCodeButton code={d.code} />
             </div>
           ))}
         </div>
@@ -571,6 +626,231 @@ function ContactSection({ config }) {
               <div><p className="font-medium text-foreground">Easy returns</p><p>30-day return window on all orders.</p></div>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ============ MORE BLOCKS ============
+
+const FEATURE_ICON_MAP = {
+  truck: Truck, shield: ShieldCheck, refresh: RotateCcw, heart: Heart, star: Star, sparkles: Sparkles,
+  gift: Gift, clock: Clock, leaf: Leaf, award: Award, headphones: Headphones, 'credit-card': CreditCard
+}
+
+function FeaturesSection({ config }) {
+  const items = (config.items || []).filter(i => i.title || i.text)
+  if (items.length === 0) return null
+  const cols = Math.min(6, Math.max(1, parseInt(config.columns) || 4))
+  const align = config.align === 'left' ? 'text-left items-start' : 'text-center items-center'
+  return (
+    <section>
+      <div className="container-ecom">
+        {config.title && (
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-8 text-center" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>
+            {config.title}
+          </h2>
+        )}
+        <div className="sec-grid gap-8" style={{ '--grid-cols': cols, '--grid-cols-mobile': Math.min(cols, 2) }}>
+          {items.map((it, i) => {
+            const Icon = FEATURE_ICON_MAP[it.icon] || Sparkles
+            return (
+              <div key={i} className={`flex flex-col gap-3 ${align}`}>
+                <div className="h-11 w-11 rounded-full bg-muted flex items-center justify-center"><Icon className="h-5 w-5" /></div>
+                <div>
+                  {it.title && <p className="font-semibold">{it.title}</p>}
+                  {it.text && <p className="text-sm text-muted-foreground mt-1">{it.text}</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SpacerSection({ config }) {
+  const height = Math.min(400, Math.max(0, parseInt(config.height) || 0))
+  return (
+    <div aria-hidden style={{ height }} className="flex items-center">
+      {config.divider && <div className="container-ecom w-full"><hr className="border-border" /></div>}
+    </div>
+  )
+}
+
+async function CollectionListSection({ config }) {
+  const categories = await db.category.findMany({
+    where: { isVisible: true, parentId: null },
+    orderBy: { sortOrder: 'asc' },
+    take: Math.min(24, Math.max(1, parseInt(config.limit) || 6)),
+    include: config.showCount ? { _count: { select: { products: true } } } : undefined
+  })
+  if (categories.length === 0) return null
+  const cols = Math.min(6, Math.max(2, parseInt(config.columnsDesktop) || 3))
+  const colsM = Math.min(3, Math.max(1, parseInt(config.columnsMobile) || 2))
+  const aspect = config.aspect === 'square' ? 'aspect-square' : config.aspect === 'landscape' ? 'aspect-[4/3]' : 'aspect-[3/4]'
+  return (
+    <section>
+      <div className="container-ecom">
+        {config.title && (
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-6" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{config.title}</h2>
+        )}
+        <div className="sec-grid gap-4" style={{ '--grid-cols': cols, '--grid-cols-mobile': colsM }}>
+          {categories.map(c => (
+            <Link key={c.id} href={`/categories/${c.slug}`} className={`group relative ${aspect} rounded-lg overflow-hidden bg-card`}>
+              {c.imageUrl
+                ? <img src={c.imageUrl} alt={c.name} className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                : <div className="absolute inset-0 bg-gradient-to-br from-muted to-muted/60" />}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+              <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
+                <h3 className="text-lg font-semibold leading-tight">{c.name}</h3>
+                <p className="text-xs text-white/70 mt-0.5">
+                  {config.showCount && c._count ? `${c._count.products} products` : 'Shop now →'}
+                </p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+async function FeaturedProductSection({ config }) {
+  const product = config.productSlug
+    ? await db.product.findFirst({ where: { slug: config.productSlug, status: 'PUBLISHED' }, include: { images: { orderBy: { sortOrder: 'asc' }, take: 1 } } })
+    : await db.product.findFirst({ where: { status: 'PUBLISHED', featured: true }, orderBy: { createdAt: 'desc' }, include: { images: { orderBy: { sortOrder: 'asc' }, take: 1 } } })
+  if (!product) return null
+  const reversed = config.layout === 'image-right'
+  const onSale = product.compareAtPrice && product.compareAtPrice > product.price
+  const fmt = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency: product.currency || 'USD' }).format(n)
+  const blurb = product.shortDescription || (config.showDescription !== false ? String(product.description || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 280) : '')
+  return (
+    <section>
+      <div className="container-ecom">
+        <div className="grid md:grid-cols-2 gap-8 md:gap-14 items-center">
+          <div className={reversed ? 'md:order-2' : ''}>
+            <Link href={`/products/${product.slug}`} className="block aspect-square rounded-lg overflow-hidden bg-muted">
+              {product.images[0] && <img src={product.images[0].url} alt={product.name} className="h-full w-full object-cover" />}
+            </Link>
+          </div>
+          <div className={reversed ? 'md:order-1' : ''}>
+            {config.title && <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium mb-3">{config.title}</p>}
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{product.name}</h2>
+            <p className="mt-3 text-xl font-semibold">
+              {fmt(product.price)}
+              {onSale && <span className="ml-2 text-base font-normal text-muted-foreground line-through">{fmt(product.compareAtPrice)}</span>}
+            </p>
+            {blurb && <p className="mt-4 text-muted-foreground leading-relaxed max-w-md">{blurb}</p>}
+            <Button asChild size="lg" className="mt-6">
+              <Link href={`/products/${product.slug}`}>{config.buttonText || 'View product'} <ArrowRight className="ml-2 h-4 w-4" /></Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function PromoTilesSection({ config }) {
+  const tiles = (config.tiles || []).filter(t => t.image || t.title)
+  if (tiles.length === 0) return null
+  const cols = Math.min(4, Math.max(1, parseInt(config.columns) || 2))
+  const h = { small: '220px', medium: '320px', large: '440px' }[config.height] || '320px'
+  return (
+    <section>
+      <div className="container-ecom">
+        {config.title && (
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-6" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{config.title}</h2>
+        )}
+        <div className="sec-grid gap-4" style={{ '--grid-cols': cols, '--grid-cols-mobile': 1 }}>
+          {tiles.map((t, i) => (
+            <Link key={i} href={t.buttonUrl || '#'} className="group relative rounded-lg overflow-hidden bg-zinc-800 block" style={{ height: h }}>
+              {t.image && <img src={t.image} alt={t.title || ''} className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" />}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-6 text-white">
+                {t.title && <h3 className="text-2xl font-bold leading-tight" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{t.title}</h3>}
+                {t.subtitle && <p className="text-sm text-white/80 mt-1">{t.subtitle}</p>}
+                {t.buttonText && <span className="inline-flex items-center gap-1 mt-3 text-sm font-medium underline-offset-4 group-hover:underline">{t.buttonText} <ArrowRight className="h-4 w-4" /></span>}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function GallerySection({ config }) {
+  const images = (config.images || []).filter(i => i.image)
+  if (images.length === 0) return null
+  const cols = Math.min(6, Math.max(1, parseInt(config.columnsDesktop) || 4))
+  const colsM = Math.min(3, Math.max(1, parseInt(config.columnsMobile) || 2))
+  const gap = config.gap === 'none' ? 'gap-0' : config.gap === 'sm' ? 'gap-1.5' : config.gap === 'lg' ? 'gap-6' : 'gap-3'
+  const aspect = config.aspect === 'portrait' ? 'aspect-[3/4]' : config.aspect === 'landscape' ? 'aspect-[4/3]' : config.aspect === 'auto' ? '' : 'aspect-square'
+  return (
+    <section>
+      <div className="container-ecom">
+        {config.title && (
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-6 text-center" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>{config.title}</h2>
+        )}
+        <div className={`sec-grid ${gap}`} style={{ '--grid-cols': cols, '--grid-cols-mobile': colsM }}>
+          {images.map((g, i) => {
+            const img = <img src={g.image} alt={g.alt || ''} loading="lazy" className={`w-full object-cover ${aspect} ${config.rounded === false ? '' : 'rounded-lg'}`} />
+            return g.link ? <Link key={i} href={g.link} className="block hover:opacity-90 transition-opacity">{img}</Link> : <div key={i}>{img}</div>
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function QuoteSection({ config }) {
+  if (!config.text) return null
+  return (
+    <section>
+      <div className="container-ecom max-w-3xl text-center">
+        <p className="text-2xl md:text-4xl font-medium leading-snug tracking-tight" style={{ fontFamily: 'var(--font-display), Inter, sans-serif' }}>
+          &ldquo;{config.text}&rdquo;
+        </p>
+        {(config.author || config.role || config.image) && (
+          <div className="mt-6 flex items-center justify-center gap-3">
+            {config.image && <img src={config.image} alt={config.author || ''} className="h-10 w-10 rounded-full object-cover" />}
+            <div className="text-left">
+              {config.author && <p className="text-sm font-semibold">{config.author}</p>}
+              {config.role && <p className="text-xs text-muted-foreground">{config.role}</p>}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+const SOCIAL_ICON_MAP = {
+  instagram: Instagram, x: Twitter, facebook: Facebook, youtube: Youtube, tiktok: Music2,
+  linkedin: Linkedin, github: Github, twitch: Twitch, discord: MessageCircle, email: Mail, website: Globe
+}
+
+function SocialLinksSection({ config }) {
+  const items = (config.items || []).filter(i => i.url)
+  if (items.length === 0) return null
+  return (
+    <section>
+      <div className={`container-ecom ${config.align === 'left' ? 'text-left' : 'text-center'}`}>
+        {config.title && <p className="text-sm font-medium mb-4">{config.title}</p>}
+        <div className={`flex flex-wrap gap-3 ${config.align === 'left' ? 'justify-start' : 'justify-center'}`}>
+          {items.map((it, i) => {
+            const Icon = SOCIAL_ICON_MAP[it.platform] || Globe
+            return (
+              <a key={i} href={it.url} target="_blank" rel="noopener noreferrer" aria-label={it.platform}
+                className="h-11 w-11 rounded-full border border-border flex items-center justify-center hover:bg-foreground hover:text-background transition-colors">
+                <Icon className="h-5 w-5" />
+              </a>
+            )
+          })}
         </div>
       </div>
     </section>

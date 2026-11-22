@@ -25,7 +25,7 @@ const checkoutSchema = z.object({
   country: z.string().min(1),
   phone: z.string().optional(),
   shippingMethodId: z.string().min(1),
-  paymentProvider: z.enum(['stripe', 'paypal', 'paypal_standard', 'cod']).optional(),
+  paymentProvider: z.enum(['stripe', 'paypal', 'paypal_standard', 'cod', 'crypto_coinbase', 'crypto_nowpayments', 'crypto_manual']).optional(),
   discountCode: z.string().optional(),
   notes: z.string().optional(),
   createAccount: z.boolean().optional(),
@@ -210,6 +210,34 @@ export async function POST(req) {
       } catch (e) {
         await db.order.update({ where: { id: order.id }, data: { status: 'FAILED' } })
         return NextResponse.json({ error: e.message || 'PayPal error' }, { status: 400 })
+      }
+    }
+
+    // Crypto: hosted checkout (Coinbase Commerce / NOWPayments) or manual wallet page
+    if (provider.startsWith('crypto_')) {
+      try {
+        const crypto = await import('@/lib/payments/crypto')
+        const { getAppUrl } = await import('@/lib/settings')
+        const base = await getAppUrl()
+        const common = {
+          amount: order.total, currency: order.currency, orderId: order.id, orderNumber: order.orderNumber,
+        }
+        let redirect, ref
+        if (provider === 'crypto_coinbase') {
+          const r = await crypto.createCoinbaseCharge({ ...common, redirectUrl: `${base}/checkout/success?order=${order.id}`, cancelUrl: `${base}/checkout` })
+          redirect = r.url; ref = r.id
+        } else if (provider === 'crypto_nowpayments') {
+          const r = await crypto.createNowInvoice({ ...common, ipnUrl: `${base}/api/payments/webhook/nowpayments`, successUrl: `${base}/checkout/success?order=${order.id}`, cancelUrl: `${base}/checkout` })
+          redirect = r.url; ref = r.id
+        } else {
+          if (!(await crypto.manualCryptoConfig())) throw new Error('Crypto wallet payments are not set up')
+          redirect = `${base}/checkout/crypto?order=${order.id}`; ref = `crypto_manual_${order.id}`
+        }
+        await db.order.update({ where: { id: order.id }, data: { paymentRef: ref, paymentProvider: provider } })
+        return NextResponse.json({ orderId: order.id, orderNumber: order.orderNumber, provider, redirect })
+      } catch (e) {
+        await db.order.update({ where: { id: order.id }, data: { status: 'FAILED' } })
+        return NextResponse.json({ error: e.message || 'Crypto payment error' }, { status: 400 })
       }
     }
 

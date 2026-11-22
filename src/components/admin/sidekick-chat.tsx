@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
   Sparkles, Send, Settings2, Loader2, Copy, Check, Trash2, KeyRound,
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { NO_AUTOFILL_PROPS } from '@/components/ui/secret-input'
 
 type Role = 'user' | 'assistant'
 type Message = { role: Role; content: string; thinking?: string; streaming?: boolean }
@@ -469,8 +470,10 @@ export function SidekickChat({
             <div>
               <label className="block text-[12px] font-medium mb-1">API key</label>
               <input
-                type="password"
-                autoComplete="off"
+                type="text"
+                name="sidekick-provider-key"
+                {...NO_AUTOFILL_PROPS}
+                style={{ WebkitTextSecurity: 'disc' } as CSSProperties}
                 placeholder={settings?.hasKey ? `Saved: ${settings.maskedKey} (leave blank to keep)` : 'sk-…'}
                 value={form.apiKey}
                 onChange={(e) => setForm({ ...form, apiKey: e.target.value })}

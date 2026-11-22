@@ -56,6 +56,19 @@ export function AdminOrderActions({ order }) {
     }
   }
 
+  const markPaid = async () => {
+    if (!confirm('Confirm that you received this payment? This marks the order paid and sends the customer their confirmation.')) return
+    try {
+      const r = await fetch(`/api/admin/orders/${order.id}/mark-paid`, { method: 'POST' })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Failed')
+      toast.success('Order marked as paid')
+      router.refresh()
+    } catch (e) {
+      toast.error('Could not mark as paid', e.message)
+    }
+  }
+
   const refund = async () => {
     if (!confirm('Refund this order? This action cannot be undone.')) return
     if (!order.paymentProvider || order.paymentProvider === 'cod') {
@@ -149,6 +162,12 @@ export function AdminOrderActions({ order }) {
         <button onClick={save} disabled={saving} className="sf-btn sf-btn-primary w-full disabled:opacity-50">
           {saving ? 'Saving...' : 'Save changes'}
         </button>
+
+        {order.paymentStatus === 'UNPAID' && !['CANCELLED', 'REFUNDED', 'FAILED'].includes(order.status) && (
+          <button onClick={markPaid} className="sf-btn sf-btn-secondary w-full">
+            Mark as paid
+          </button>
+        )}
 
         {order.paymentStatus === 'PAID' && (
           <button onClick={refund} className="sf-btn sf-btn-secondary w-full text-rose-600 border-rose-200 hover:bg-rose-50">

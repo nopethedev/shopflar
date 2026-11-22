@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { getStoreSettings } from '@/lib/settings'
 import { getSessionUser } from '@/lib/auth'
 import { demoGuard, isDemoMode } from '@/lib/demo'
+import { getRenderableSections } from '@/lib/page-sections'
+import { PreviewBridge } from '@/components/storefront/preview-bridge'
+import { SECTION_LABELS } from '@/lib/section-labels'
 import { StorefrontLayout } from '@/components/storefront/storefront-layout'
 import { ProductCard } from '@/components/storefront/product-card'
 import { NewsletterForm } from '@/components/storefront/newsletter-form'
@@ -45,23 +48,9 @@ export default async function HomePage({ searchParams }) {
       orderBy: { createdAt: 'desc' },
       take: 4
     }),
-    // Draft preview merges draftConfig and includes draft-only sections;
+    // Draft preview merges staged edits and includes draft-only sections;
     // the public page only sees published rows
-    previewDrafts
-      ? db.pageSection.findMany({
-          where: { pageType: 'home', isDeleted: false },
-          orderBy: { sortOrder: 'asc' }
-        }).then(rows => rows
-          .sort((a, b) => (a.draftSortOrder ?? a.sortOrder) - (b.draftSortOrder ?? b.sortOrder))
-          .map(s => ({
-            ...s,
-            config: s.draftConfig || s.config,
-            isVisible: s.isVisible
-          })))
-      : db.pageSection.findMany({
-          where: { pageType: 'home', isDraft: false, isDeleted: false },
-          orderBy: { sortOrder: 'asc' }
-        })
+    getRenderableSections('home', null, previewDrafts)
   ])
 
   // If custom sections exist, render those instead of the default layout
@@ -69,8 +58,9 @@ export default async function HomePage({ searchParams }) {
     const { SectionRenderer } = await import('@/components/storefront/section-renderer')
     return (
       <StorefrontLayout settings={settings} categories={categories}>
+        {previewDrafts && <PreviewBridge />}
         {customSections.map(section => (
-          <SectionRenderer key={section.id} section={section} />
+          <SectionRenderer key={section.id} section={section} preview={previewDrafts} label={SECTION_LABELS[section.sectionType]} />
         ))}
       </StorefrontLayout>
     )
@@ -78,6 +68,7 @@ export default async function HomePage({ searchParams }) {
 
   return (
     <StorefrontLayout settings={settings} categories={categories}>
+      {previewDrafts && <PreviewBridge />}
       {/* ===== Hero ===== */}
       <section className="relative">
         <div className="relative h-[78vh] min-h-[500px] w-full overflow-hidden">

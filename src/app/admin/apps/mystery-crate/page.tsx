@@ -18,7 +18,7 @@ export default async function MysteryCratePage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Mystery Crate Plugin</h1>
+        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Mystery Crate</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Turn any product into a mystery crate. When a customer buys one, it includes guaranteed items plus random picks from your pool.
         </p>

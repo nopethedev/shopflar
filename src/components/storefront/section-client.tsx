@@ -158,3 +158,23 @@ export function CountdownSection({ config }) {
     </section>
   )
 }
+
+// ===== Copy-to-clipboard button for discount codes =====
+export function CopyCodeButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(code)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1800)
+        } catch { /* clipboard unavailable (insecure context) */ }
+      }}
+      className="px-3 py-1.5 rounded-md bg-foreground text-background text-xs font-medium hover:bg-foreground/90"
+    >
+      {copied ? 'Copied!' : 'Copy'}
+    </button>
+  )
+}

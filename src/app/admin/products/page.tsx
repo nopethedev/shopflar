@@ -1,4 +1,4 @@
-import { db } from '@/lib/db'
+import { db, like } from '@/lib/db'
 import Link from 'next/link'
 import { AdminProductsTable } from '@/components/admin/admin-products-table'
 import { Button } from '@/components/ui/button'
@@ -14,9 +14,9 @@ export default async function AdminProductsPage({ searchParams }) {
 
   const where = search ? {
     OR: [
-      { name: { contains: search } },
-      { slug: { contains: search } },
-      { sku: { contains: search } }
+      { name: like(search) },
+      { slug: like(search) },
+      { sku: like(search) }
     ]
   } : {}
 

@@ -6,9 +6,10 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SecretInput } from '@/components/ui/secret-input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/lib/toast'
-import { CreditCard, CheckCircle2, AlertTriangle, ExternalLink, Save, Eye, EyeOff } from 'lucide-react'
+import { CreditCard, CheckCircle2, AlertTriangle, ExternalLink, Save } from 'lucide-react'
 
 export function AdminPaymentsManager({ settings: initialSettings }) {
   const router = useRouter()
@@ -23,11 +24,6 @@ export function AdminPaymentsManager({ settings: initialSettings }) {
     PAYPAL_MODE: 'sandbox',
     PAYPAL_IPN_URL: '',
     PAYPAL_EMAIL: ''
-  })
-  const [showSecrets, setShowSecrets] = useState({
-    STRIPE_SECRET_KEY: false,
-    STRIPE_WEBHOOK_SECRET: false,
-    PAYPAL_CLIENT_SECRET: false
   })
   const [loadingCreds, setLoadingCreds] = useState(true)
 
@@ -85,7 +81,6 @@ export function AdminPaymentsManager({ settings: initialSettings }) {
   }
 
   const setCred = (key, value) => setCreds(c => ({ ...c, [key]: value }))
-  const toggleSecret = (key) => setShowSecrets(s => ({ ...s, [key]: !s[key] }))
 
   return (
     <div className="space-y-4">
@@ -144,18 +139,10 @@ export function AdminPaymentsManager({ settings: initialSettings }) {
         <div className="mt-4 space-y-3">
           <div>
             <Label className="text-xs">Secret Key <span className="text-muted-foreground">(server-only, never exposed to browser)</span></Label>
-            <div className="flex gap-2">
-              <Input
-                type={showSecrets.STRIPE_SECRET_KEY ? 'text' : 'password'}
-                value={creds.STRIPE_SECRET_KEY}
+            <SecretInput value={creds.STRIPE_SECRET_KEY}
                 onChange={(e) => setCred('STRIPE_SECRET_KEY', e.target.value)}
                 placeholder="sk_test_... or sk_live_..."
-                className="font-mono text-xs"
-              />
-              <Button type="button" variant="outline" size="icon" onClick={() => toggleSecret('STRIPE_SECRET_KEY')}>
-                {showSecrets.STRIPE_SECRET_KEY ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
+                className="font-mono text-xs" />
           </div>
           <div>
             <Label className="text-xs">Publishable Key <span className="text-muted-foreground">(safe for browser)</span></Label>
@@ -169,18 +156,10 @@ export function AdminPaymentsManager({ settings: initialSettings }) {
           </div>
           <div>
             <Label className="text-xs">Webhook Signing Secret</Label>
-            <div className="flex gap-2">
-              <Input
-                type={showSecrets.STRIPE_WEBHOOK_SECRET ? 'text' : 'password'}
-                value={creds.STRIPE_WEBHOOK_SECRET}
+            <SecretInput value={creds.STRIPE_WEBHOOK_SECRET}
                 onChange={(e) => setCred('STRIPE_WEBHOOK_SECRET', e.target.value)}
                 placeholder="whsec_..."
-                className="font-mono text-xs"
-              />
-              <Button type="button" variant="outline" size="icon" onClick={() => toggleSecret('STRIPE_WEBHOOK_SECRET')}>
-                {showSecrets.STRIPE_WEBHOOK_SECRET ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
+                className="font-mono text-xs" />
             <p className="text-xs text-muted-foreground mt-1">Endpoint: <code>/api/payments/webhook/stripe</code></p>
           </div>
           <Button size="sm" onClick={() => saveCreds(['STRIPE_SECRET_KEY', 'STRIPE_PUBLISHABLE_KEY', 'STRIPE_WEBHOOK_SECRET'])} disabled={saving}>
@@ -259,18 +238,10 @@ export function AdminPaymentsManager({ settings: initialSettings }) {
           </div>
           <div>
             <Label className="text-xs">Client Secret <span className="text-muted-foreground">(server-only)</span></Label>
-            <div className="flex gap-2">
-              <Input
-                type={showSecrets.PAYPAL_CLIENT_SECRET ? 'text' : 'password'}
-                value={creds.PAYPAL_CLIENT_SECRET}
+            <SecretInput value={creds.PAYPAL_CLIENT_SECRET}
                 onChange={(e) => setCred('PAYPAL_CLIENT_SECRET', e.target.value)}
                 placeholder="ELb...your-secret..."
-                className="font-mono text-xs"
-              />
-              <Button type="button" variant="outline" size="icon" onClick={() => toggleSecret('PAYPAL_CLIENT_SECRET')}>
-                {showSecrets.PAYPAL_CLIENT_SECRET ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </Button>
-            </div>
+                className="font-mono text-xs" />
           </div>
           <div>
             <Label className="text-xs">IPN Notification URL <span className="text-muted-foreground">(optional, for personal accounts)</span></Label>

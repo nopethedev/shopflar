@@ -1,17 +1,47 @@
+# Shopflar + PostgreSQL — the recommended production stack.
+#
+#   cp .env.docker.example .env.docker      # then edit it (see below)
+#   docker compose --env-file .env.docker up -d
+#
+# First start downloads the image, creates the database and applies the schema.
+# Using SQLite instead (single container, no database server)?
+#   docker compose -f docker-compose.sqlite.yml --env-file .env.docker up -d
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shopflar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.docker (openssl rand -hex 24)}
+      POSTGRES_DB: shopflar
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopflar -d shopflar"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # Not published to the host on purpose. Uncomment to connect with a GUI:
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
   shopflar:
-    image: ghcr.io/nopethedev/shopflar:latest
+    image: ${SHOPFLAR_IMAGE:-ghcr.io/nopethedev/shopflar:latest}
     build:
       context: .
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "${PORT:-3000}:3000"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-file:/data/shopflar.db}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env.docker}
+      # Use a hex password (openssl rand -hex 24) so it needs no URL-encoding.
+      DATABASE_URL: postgresql://shopflar:${POSTGRES_PASSWORD}@postgres:5432/shopflar?schema=public
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in .env.docker (openssl rand -hex 32)}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       APP_URL: ${APP_URL:-http://localhost:3000}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      DEMO_MODE: ${DEMO_MODE:-true}
+      DEMO_MODE: ${DEMO_MODE:-false}
       DEMO_RESET_MINUTES: ${DEMO_RESET_MINUTES:-30}
       DEMO_ADMIN_EMAIL: ${DEMO_ADMIN_EMAIL:-}
       DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
@@ -28,6 +58,7 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       RUN_DB_PUSH: ${RUN_DB_PUSH:-true}
     volumes:
+      # Uploaded images/files (the database lives in the postgres-data volume)
       - shopflar-data:/data
     restart: unless-stopped
     healthcheck:
@@ -41,7 +72,8 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
 volumes:
+  postgres-data:
   shopflar-data:

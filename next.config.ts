@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  async redirects() {
+    return [
+      // Plugins were renamed to the App Library
+      { source: '/admin/plugins', destination: '/admin/apps', permanent: true },
+      { source: '/admin/plugins/:path*', destination: '/admin/apps/:path*', permanent: true },
+    ]
+  },
 };
 
 export default nextConfig;

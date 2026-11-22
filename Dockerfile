@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 # Production image for running Shopflar on a Node host.
-# All mutable state lives in /data: SQLite database, demo timer, and uploads.
+# All mutable state lives in /data: uploads, demo timer and (for SQLite) the
+# database. Set DATABASE_URL=postgresql://… to use PostgreSQL instead — see
+# docker-compose.yml.
 
 FROM oven/bun:1 AS deps
 WORKDIR /app
@@ -60,6 +62,7 @@ COPY --from=builder --chown=node:node /app/prisma ./prisma
 COPY --from=builder --chown=node:node /app/package.json ./package.json
 COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
 COPY --chown=node:node scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chown=node:node scripts/ensure-db-provider.mjs ./scripts/ensure-db-provider.mjs
 
 # Uploads and demo state are written through these symlinks into the volume.
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \

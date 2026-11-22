@@ -1,4 +1,4 @@
-import { db } from '@/lib/db'
+import { db, like } from '@/lib/db'
 import { AdminCustomersTable } from '@/components/admin/admin-customers-table'
 
 export const dynamic = 'force-dynamic'
@@ -14,8 +14,8 @@ export default async function AdminCustomersPage({ searchParams }) {
         role: 'CUSTOMER',
         ...(search ? {
           OR: [
-            { email: { contains: search } },
-            { name: { contains: search } }
+            { email: like(search) },
+            { name: like(search) }
           ]
         } : {})
       },

@@ -1,9 +1,12 @@
-name: Publish Docker image
+name: Docker
 
+# PRs: build the image and smoke-test the full PostgreSQL stack (nothing is pushed).
+# main / tags: the same test, then publish to GitHub Container Registry.
 on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -14,15 +17,69 @@ concurrency:
   group: docker-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
 jobs:
-  build:
+  test:
+    name: Build & smoke test (PostgreSQL)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: shopflar:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Start the Postgres stack
+        env:
+          SHOPFLAR_IMAGE: shopflar:ci
+          POSTGRES_PASSWORD: ci-postgres-password
+          NEXTAUTH_SECRET: ci-nextauth-secret-ci-nextauth-secret
+        run: docker compose up -d
+
+      - name: Wait for a healthy app
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/login -o /dev/null; then
+              echo "App is up after ~$((i*3))s"; exit 0
+            fi
+            sleep 3
+          done
+          echo "App did not become ready" >&2
+          docker compose logs --no-color
+          exit 1
+
+      - name: Smoke test
+        run: |
+          curl -fsS http://localhost:3000/api/payments/providers | grep -q '"providers"'
+          curl -fsS -o /dev/null http://localhost:3000/products
+          docker compose exec -T postgres psql -U shopflar -d shopflar -c '\dt' | grep -q products
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v
+
+  publish:
+    name: Publish to GHCR
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -35,10 +92,11 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=ref,event=branch
-            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 

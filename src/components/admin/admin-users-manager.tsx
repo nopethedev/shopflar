@@ -198,8 +198,8 @@ export function AdminUsersManager({ users, currentUser }) {
         <h3 className="font-semibold mb-4 flex items-center gap-2"><UserPlus className="h-4 w-4" /> Create New Admin</h3>
         <div className="grid sm:grid-cols-4 gap-3">
           <div><Label className="text-xs">Name</Label><Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Optional" /></div>
-          <div><Label className="text-xs">Email</Label><Input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} /></div>
-          <div><Label className="text-xs">Password</Label><Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Min 8 chars" /></div>
+          <div><Label className="text-xs">Email</Label><Input type="email" autoComplete="off" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} /></div>
+          <div><Label className="text-xs">Password</Label><Input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Min 8 chars" /></div>
           <div>
             <Label className="text-xs">Role</Label>
             <Select value={newRole} onValueChange={setNewRole}>

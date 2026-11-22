@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SecretInput } from '@/components/ui/secret-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
@@ -136,8 +137,7 @@ export function AdminFulfillmentManager({ settings: initial }) {
         <div className="space-y-3 pt-3 border-t border-border">
           <div>
             <Label className="text-xs">API Key <span className="text-muted-foreground">(get from Printful dashboard → Stores → API)</span></Label>
-            <Input
-              type="password"
+            <SecretInput
               value={creds.PRINTFUL_API_KEY}
               onChange={(e) => setCreds(c => ({ ...c, PRINTFUL_API_KEY: e.target.value }))}
               placeholder={settings.printful.apiKey || 'Enter your Printful API key...'}
@@ -190,8 +190,7 @@ export function AdminFulfillmentManager({ settings: initial }) {
           </div>
           <div>
             <Label className="text-xs">API Key <span className="text-muted-foreground">(get from CJ Dropshipping dashboard → API)</span></Label>
-            <Input
-              type="password"
+            <SecretInput
               value={creds.CJ_API_KEY}
               onChange={(e) => setCreds(c => ({ ...c, CJ_API_KEY: e.target.value }))}
               placeholder={settings.cj.apiKey || 'Enter your CJ API key...'}

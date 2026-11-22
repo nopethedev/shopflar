@@ -29,7 +29,7 @@ const ALLOWED_STYLE_PROPS = new Set([
 function sanitizeUrl(url) {
   if (!url || typeof url !== 'string') return ''
   const trimmed = url.trim()
-  if (/^(https?:|mailto:|tel:|\/|#)/i.test(trimmed)) return trimmed
+  if (/^(https?:|mailto:|tel:|\/|#|\?)/i.test(trimmed)) return trimmed
   // Allow protocol-relative URLs
   if (/^\/\//.test(trimmed)) return trimmed
   return ''
@@ -150,22 +150,33 @@ function sanitizeHtmlServerSide(html) {
   return result
 }
 
-// Sanitize a section config object — recursively sanitize any HTML fields
+// Sanitize a section config object — recursively, so nested list items
+// (slides, testimonials, logos, features…) get the same treatment as the
+// top level. HTML fields are scrubbed, URL fields must be safe schemes.
+const HTML_FIELDS = new Set(['body', 'html', 'content', 'text', 'answer', 'caption'])
+const URL_FIELDS = new Set(['image', 'url', 'link', 'buttonUrl', 'videoUrl', 'href', 'bgImage', 'logo', 'poster'])
+
+function sanitizeValue(key, value, depth) {
+  if (depth > 6) return undefined
+  if (typeof value === 'string') {
+    if (URL_FIELDS.has(key)) return sanitizeUrl(value)
+    if (HTML_FIELDS.has(key)) return sanitizeHtml(value)
+    return value
+  }
+  if (Array.isArray(value)) return value.slice(0, 200).map(v => sanitizeValue(key, v, depth + 1))
+  if (value && typeof value === 'object') {
+    const out = {}
+    for (const [k, v] of Object.entries(value)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue
+      const clean = sanitizeValue(k, v, depth + 1)
+      if (clean !== undefined) out[k] = clean
+    }
+    return out
+  }
+  return value
+}
+
 export function sanitizeSectionConfig(config) {
-  if (!config || typeof config !== 'object') return config
-  const sanitized = { ...config }
-  const htmlFields = ['body', 'html', 'content', 'text']
-  for (const field of htmlFields) {
-    if (sanitized[field] && typeof sanitized[field] === 'string') {
-      sanitized[field] = sanitizeHtml(sanitized[field])
-    }
-  }
-  // Sanitize URL fields
-  const urlFields = ['image', 'url', 'link', 'buttonUrl', 'videoUrl']
-  for (const field of urlFields) {
-    if (sanitized[field] && typeof sanitized[field] === 'string') {
-      sanitized[field] = sanitizeUrl(sanitized[field])
-    }
-  }
-  return sanitized
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return {}
+  return sanitizeValue('', config, 0) || {}
 }

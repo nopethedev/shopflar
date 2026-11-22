@@ -360,6 +360,11 @@ export async function createOrder({ items, discountCode, shippingMethodId, custo
 }
 
 export async function markOrderPaid(orderId, provider, reference) {
+  // Webhooks are delivered at-least-once — make this idempotent so a retry
+  // can't double-record the payment or re-run fulfillment.
+  const existing = await db.order.findUnique({ where: { id: orderId }, select: { paymentStatus: true } })
+  if (existing?.paymentStatus === 'PAID') return db.order.findUnique({ where: { id: orderId }, include: { items: true } })
+
   const order = await db.order.update({
     where: { id: orderId },
     data: {

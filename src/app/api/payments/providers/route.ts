@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getPaymentSettings, getAvailableProviders } from '@/lib/payments'
+import { cryptoCheckoutOptions } from '@/lib/payments/crypto'
 
 export async function GET() {
   const settings = await getPaymentSettings()
@@ -31,6 +32,9 @@ export async function GET() {
       description: 'Pay with PayPal — personal account',
       testMode: settings.paypalStandard.testMode
     })
+  }
+  for (const c of await cryptoCheckoutOptions().catch(() => [])) {
+    providers.push({ ...c, testMode: false })
   }
   // Always provide COD as fallback
   providers.push({
